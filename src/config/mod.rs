@@ -6,7 +6,7 @@ use serde_json;
 fn check_dir_exists(path: &str) {
     let p = std::path::Path::new(path);
     if !std::path::Path::is_dir(p) {
-        panic!("Invalid configuration, {} does not exist or it is not a directory");
+        panic!("Invalid configuration, {} does not exist or it is not a directory", path);
     }
 }
 
