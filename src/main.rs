@@ -20,5 +20,5 @@ fn main() {
     let cfg = config::load("./cfg.json");
     init(cfg.as_ref());
 
-    server::server::start(cfg);
+    server::start(cfg);
 }
