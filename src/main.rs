@@ -8,7 +8,7 @@ mod server;
 mod session;
 
 fn init(cfg: &config::Config) {
-    let p = std::path::Path::new(cfg.root_dir.as_str());
+    let p = std::path::Path::new(cfg.jobs_dir.as_str());
     if !std::path::Path::is_dir(p) {
         let mut db = std::fs::DirBuilder::new();
         db.recursive(true);
