@@ -67,7 +67,7 @@ impl Session {
     pub fn add_job(&self, name: String, commands: serde_json::Value) -> Result<(Uuid, job::JobInfo), String> {
         let mut data = self.data.write().unwrap();
         for (_, job) in &data.jobs {
-            if job.info().name == name {
+            if job.name == name {
                 return Err(String::from("Job with the same name already exists in this session"));
             }
         }
@@ -88,7 +88,18 @@ impl Session {
 
                 match job.start() {
                     Ok(_) => {
-                        let info = job.info();
+                        let info = match job.info() {
+                            Ok(info) => info,
+                            Err(_) => {
+                                job::JobInfo{
+                                    name: job.name.clone(),
+                                    state: mmb::State::Running,
+                                    step: 0,
+                                    total_steps: 0,
+                                    last_completed_stage: 0,
+                                }
+                            }
+                        };
                         data.jobs.insert(id, job);
                         Ok((id, info))
                     },
@@ -108,12 +119,17 @@ impl Session {
             }
         };
 
-        if job.info().state == job::State::Running {
-            if job.stop().is_err() {
-                return false;
-            }
+        match job.info() {
+            Ok(info) => {
+                if info.state == mmb::State::Running {
+                    if job.stop().is_err() {
+                        return false;
+                    }
+                }
+                true
+            },
+            Err(_) => false,
         }
-        return true;
     }
 
     pub fn has_job(&self, id: &Uuid) -> bool {
@@ -126,11 +142,11 @@ impl Session {
         data.is_logged_in
     }
 
-    pub fn list_jobs(&self) -> Vec<(Uuid, job::JobInfo)> {
-        let data = self.data.read().unwrap();
+    pub fn list_jobs(&self) -> Vec<(Uuid, Result<job::JobInfo, String>)> {
+        let mut data = self.data.write().unwrap();
 
-        let mut list: Vec<(Uuid, job::JobInfo)> = Vec::new();
-        for (id, job) in &data.jobs {
+        let mut list: Vec<(Uuid, Result<job::JobInfo, String>)> = Vec::new();
+        for (id, job) in &mut data.jobs {
             list.push((*id, job.info()));
         }
 
@@ -146,10 +162,10 @@ impl Session {
         }
     }
 
-    pub fn job_info(&self, id: Uuid) -> Option<job::JobInfo> {
-        let data = self.data.read().unwrap();
+    pub fn job_info(&self, id: Uuid) -> Option<Result<job::JobInfo, String>> {
+        let mut data = self.data.write().unwrap();
 
-        match data.jobs.get(&id) {
+        match data.jobs.get_mut(&id) {
             Some(job) => Some(job.info()),
             None => return None
         }
@@ -161,7 +177,20 @@ impl Session {
         match data.jobs.get_mut(&id) {
             Some(job) => {
                 match job.resume(commands) {
-                    Ok(info) => Ok(info),
+                    Ok(info) => {
+                        match info {
+                            Some(info) => Ok(info),
+                            None => {
+                                Ok(job::JobInfo{
+                                    name: job.name.clone(),
+                                    state: mmb::State::Running,
+                                    step: 0,
+                                    total_steps: 0,
+                                    last_completed_stage: 0,
+                                })
+                            },
+                        }
+                    },
                     Err(e) => Err(e),
                 }
             },

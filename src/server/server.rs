@@ -80,10 +80,6 @@ fn auth_page() -> Result<NamedFile, WMSError> {
 fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppState>) -> Result<Redirect, WMSError> {
     match auth {
         api::AuthRequest::LogIn(v) => {
-            if v.username == "peppapig" {
-                return Err(WMSError{ status: Status::Forbidden });
-            }
-
             if v.username.len() < 1 {
                 return Err(WMSError{ status: Status::BadRequest });
             }
@@ -92,7 +88,10 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
             cookies.add_private(c);
             match state.sm.write().unwrap().create_session(v.username) {
                 Ok(_) => Ok(Redirect::to(uri!(index_authorized))),
-                Err(e) => Err(WMSError{ status: Status::BadRequest }),
+                Err(e) => {
+                    println!("{}", e);
+                    Err(WMSError{ status: Status::BadRequest })
+                }
             }
         },
         api::AuthRequest::LogOut(_) => {

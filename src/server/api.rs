@@ -52,6 +52,14 @@ pub struct StartJobRqData {
 /* Responses */
 
 #[derive(Serialize)]
+pub enum JobState {
+    NotStarted,
+    Running,
+    Finished,
+    Failed,
+}
+
+#[derive(Serialize)]
 pub struct ErrorResponse {
     pub success: bool,
     pub message: String,
@@ -71,10 +79,16 @@ pub struct Empty {
 pub struct JobInfo {
     pub id: String,
     pub name: String,
-    pub status: String,
+    pub state: JobState,
     pub step: String,
     pub total_steps: i32,
     pub last_completed_stage: i32,
+}
+
+#[derive(Serialize)]
+pub struct JobListItem {
+    pub ok: bool,
+    pub info: JobInfo,
 }
 
 #[derive(Serialize)]

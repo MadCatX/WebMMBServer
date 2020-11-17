@@ -1,53 +1,34 @@
 use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
+use std::io::Read;
 use std::path::PathBuf;
-use std::fmt;
 use std::process::{Child, Command};
-use std::sync::{Arc, RwLock};
 use std::thread;
-use std::thread::JoinHandle;
 use std::time::Duration;
 use serde_json;
 
 use crate::mmb;
 
 const CMDS_FILE_NAME: &'static str = "commands.txt";
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum State {
-    NotStarted,
-    Running,
-    Failed,
-    Finished
-}
-
-impl fmt::Display for State {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
+const PGRS_FILE_NAME: &'static str = "progress.json";
 
 #[derive(Clone)]
 pub struct JobInfo {
     pub name: String,
-    pub state: State,
+    pub state: mmb::State,
     pub step: i32,
     pub total_steps: i32, 
     pub last_completed_stage: i32,
 }
 
-struct JobData {
-    info: JobInfo, 
-    mmb_process: Option<Child>,
-}
-
 pub struct Job {
-    data: Arc<RwLock<JobData>>,
+    pub name: String,
     commands: serde_json::Value,
     job_dir: PathBuf,
     cmds_path: PathBuf,
     mmb_exec_path: PathBuf,
-    watcher: Option<JoinHandle<()>>,
+    progress_path: PathBuf,
+    mmb_process: Option<Child>,
 }
 
 fn get_last_completed_stage(path: &PathBuf) -> i32 {
@@ -106,6 +87,45 @@ fn get_last_completed_stage(path: &PathBuf) -> i32 {
     last_stage
 }
 
+fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
+    if proc.is_none() {
+        return Ok(mmb::State::Unknown);
+    }
+
+    match proc.as_mut().unwrap().try_wait() {
+        Ok(code) => {
+            match code {
+                Some(status) => {
+                    if !status.success() {
+                        return Ok(mmb::State::Failed);
+                    }
+                    Ok(mmb::State::Finished)
+                },
+                None => Ok(mmb::State::Running)
+            }
+        },
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn read_mmb_progress(path: &PathBuf) -> Result<(mmb::State, i32, i32), String> {
+    let fh = std::fs::File::open(path);
+    if fh.is_err() {
+        return Err(String::from("No progress report file"));
+    }
+
+    let mut s = String::new();
+    if fh.unwrap().read_to_string(&mut s).is_err() {
+        return Err(String::from("Cannot read progress report file"));
+    }
+
+    let json: serde_json::Result<mmb::Progress> = serde_json::from_str(s.as_str());
+    match json {
+        Ok(pgrs) => Ok((pgrs.state, pgrs.step, pgrs.total_steps)),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 impl Job {
     pub fn commands(&self) -> serde_json::Value {
         self.commands.clone()
@@ -115,40 +135,72 @@ impl Job {
         let mut cmds_path = PathBuf::new();
         cmds_path.push(&job_dir); cmds_path.push(CMDS_FILE_NAME);
 
+        let mut progress_path = PathBuf::new();
+        progress_path.push(&job_dir); progress_path.push(PGRS_FILE_NAME);
+
         match mmb::commands::write_commands(&cmds_path, &commands) {
-            Ok(total_steps) => Ok(Job{
-                data: Arc::new(
-                    RwLock::new(JobData{
-                        info: JobInfo{
-                            name,
-                            state: State::NotStarted,
-                            step: 0, // FIXME
-                            total_steps, // FIXME
-                            last_completed_stage: 0,
-                        },
-                        mmb_process: None,
-                    })
-                ),
+            Ok(()) => Ok(Job{
+                name,
                 commands,
                 job_dir,
                 cmds_path,
                 mmb_exec_path,
-                watcher: None,
+                progress_path,
+                mmb_process: None,
             }),
             Err(e) => Err(e.to_string())
         }
     }
 
-    pub fn info(&self) -> JobInfo {
-        self.data.read().unwrap().info.clone()
+    pub fn info(&mut self) -> Result<JobInfo, String> {
+        let proc_state = check_process(&mut self.mmb_process)?;
+
+        if proc_state == mmb::State::Unknown {
+            return Err(String::from("Unknown job state"));
+        }
+
+        match read_mmb_progress(&self.progress_path) {
+            Ok((state, step, total_steps)) => {
+                let mut info = JobInfo{
+                    name: self.name.clone(),
+                    state,
+                    step,
+                    total_steps,
+                    last_completed_stage: get_last_completed_stage(&self.job_dir),
+                };
+                if proc_state == mmb::State::Running {
+                    // MMB reports the job has finished but the MMB process is still running
+                    // Wait until the MMB process actually terminates
+                    info.state = mmb::State::Running;
+                } else if info.state == mmb::State::Running &&
+                          proc_state != mmb::State::Running {
+                    // MMB reports that the job is running but its process has dies
+                    // Report this as an error
+                    info.state = mmb::State::Failed;
+                }
+                Ok(info)
+            },
+            Err(e) => {
+                Ok(JobInfo{
+                    name: self.name.clone(),
+                    state: proc_state,
+                    step: 0,
+                    total_steps: 0,
+                    last_completed_stage: get_last_completed_stage(&self.job_dir),
+                })
+            },
+        }
     }
 
-    pub fn resume(&mut self, commands: serde_json::Value) -> Result<JobInfo, String> {
+    pub fn resume(&mut self, commands: serde_json::Value) -> Result<Option<JobInfo>, String> {
         match mmb::commands::write_commands(&self.cmds_path, &commands) {
             Ok(_) => {
                 self.commands = commands;
                 match self.start() {
-                    Ok(_) => Ok(self.info()),
+                    Ok(_) => match self.info() {
+                        Ok(info) => Ok(Some(info)),
+                        Err(_) => Ok(None),
+                    },
                     Err(e) => Err(e),
                 }
             }
@@ -162,93 +214,54 @@ impl Job {
         let proc = match Command::new(&self.mmb_exec_path)
             .current_dir(&self.job_dir)
             .arg(&self.cmds_path)
+            .arg(&self.progress_path)
             .spawn() {
                 Ok(proc) => proc,
                 Err(_) => return Err(String::from("Failed to start MMB process"))
             };
 
-        let mut data = self.data.write().unwrap();
-        data.info.state = State::Running;
-        data.mmb_process = Some(proc);
-
-        let thr_data = Arc::clone(&self.data);
-        let thr_work_path = self.job_dir.clone();
-        self.watcher = Some(thread::spawn(move || {
-            loop {
-                {
-                    let mut d = thr_data.write().unwrap();
-                    match &mut d.mmb_process {
-                        Some(proc) => {
-                            match proc.try_wait().unwrap() {
-                                Some(status) => {
-                                    if status.success() {
-                                        d.info.state = State::Finished;
-                                        println!("Job finished");
-                                    } else {
-                                        d.info.state = State::Failed;
-                                        println!("Job failed");
-                                    }
-
-                                    d.info.last_completed_stage = get_last_completed_stage(&thr_work_path);
-                                    return;
-                                },
-                                None => {}
-                            }
-                        },
-                        None => panic!("No process handle")
-                    }
-                }
-                thread::sleep(Duration::from_millis(1000));
-            };
-        }));
+        self.mmb_process = Some(proc);
 
         Ok(())
     }
 
     pub fn stop(&mut self) -> Result<JobInfo, String> {
-        {
-            let mut data = self.data.write().unwrap();
-
-            match data.info.state {
-                State::Finished => return Ok(data.info.clone()),
-                State::Failed => return Ok(data.info.clone()),
-                _ => {},
+        if self.mmb_process.is_none() {
+            match self.info() {
+                Ok(info) => return Ok(info),
+                Err(e) => return Err(e),
             }
+        }
 
-            let pid = data.mmb_process.as_ref().unwrap().id();
-            if signal::kill(Pid::from_raw(pid as i32), Signal::SIGTERM).is_err() {
-                return Err(String::from("Failed to signal job process"));
-            }
+        let pid = self.mmb_process.as_ref().unwrap().id();
+        if signal::kill(Pid::from_raw(pid as i32), Signal::SIGTERM).is_err() {
+            return Err(String::from("Failed to signal job process"));
+        }
         
-            let mut attempts = 0;
-            while attempts < 10 {
-                match data.mmb_process.as_mut().unwrap().try_wait() {
-                    Ok(_) => break,
-                    Err(_) => {},
-                }
-                attempts += 1;
-                thread::sleep(Duration::from_micros(100));
+        let mut attempts = 0;
+        while attempts < 10 {
+            match self.mmb_process.as_mut().unwrap().try_wait() {
+                Ok(_) => break,
+                Err(_) => {},
             }
-
-            if data.mmb_process.as_mut().unwrap().kill().is_err() {
-                return Err(String::from("Failed to kill job process"));
-            }
+            attempts += 1;
+            thread::sleep(Duration::from_micros(100));
         }
 
-        if let Some(watcher) = self.watcher.take() {
-            watcher.join().expect("Failed to join watcher thread");
+        if self.mmb_process.as_mut().unwrap().kill().is_err() {
+            return Err(String::from("Failed to kill job process"));
         }
 
-        let data = self.data.read().unwrap();
-        Ok(data.info.clone())
+        match self.info() {
+            Ok(info) => return Ok(info),
+            Err(e) => return Err(e),
+        }
     }
 }
 
 impl Drop for Job {
     fn drop(&mut self) {
-        let data = self.data.write().unwrap();
-
-        assert!(data.info.state != State::Running);
+        assert!(self.info().unwrap().state != mmb::State::Running);
 
         std::fs::remove_dir_all(&self.job_dir);
         println!("Job dropped");

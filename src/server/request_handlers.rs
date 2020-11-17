@@ -3,9 +3,9 @@ use rocket::http::Status;
 use serde_json;
 use uuid::Uuid;
 
+use crate::mmb;
 use crate::session;
 use crate::session::session::Session;
-use crate::session::job;
 use crate::server::api;
 use crate::server::responders::ApiResponse;
 
@@ -22,12 +22,13 @@ fn handle_simple_rq_data(data: serde_json::Value) -> Result<Uuid, String> {
     }
 }
 
-fn job_state_to_str(st: job::State) -> String {
-    match st {
-        job::State::NotStarted => String::from("not_started"),
-        job::State::Running => String::from("running"),
-        job::State::Finished => String::from("finished"),
-        job::State::Failed => String::from("failed"),
+fn mmb_state_to_job_state(s: mmb::State) -> api::JobState {
+    match s {
+        mmb::State::NotStarted => api::JobState::NotStarted,
+        mmb::State::Running => api::JobState::Running,
+        mmb::State::Finished => api::JobState::Finished,
+        mmb::State::Failed => api::JobState::Failed,
+        mmb::State::Unknown => panic!("mmb::State::Unknown shall never be returned"),
     }
 }
 
@@ -55,16 +56,39 @@ pub fn delete_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
 pub fn list_jobs(session: Arc<Session>) -> ApiResponse {
     let list = session.list_jobs();
 
-    let mut jobs: Vec<api::JobInfo> = Vec::new();
+    let mut jobs: Vec<api::JobListItem> = Vec::new();
     for (id, info) in list {
-        jobs.push(api::JobInfo{
-            id: session::uuid_to_str(&id),
-            name: info.name,
-            status: job_state_to_str(info.state),
-            step: step_to_str(info.step),
-            total_steps: info.total_steps,
-            last_completed_stage: info.last_completed_stage,
-        });
+        match info {
+            Ok(info) => {
+                let item = api::JobListItem{
+                    ok: true,
+                    info: api::JobInfo{
+                        id: session::uuid_to_str(&id),
+                        name: info.name,
+                        state: mmb_state_to_job_state(info.state),
+                        step: step_to_str(info.step),
+                        total_steps: info.total_steps,
+                        last_completed_stage: info.last_completed_stage,
+                    }
+                };
+                jobs.push(item);
+            },
+            Err(_) => {
+                let empty = String::new();
+                let item = api::JobListItem{
+                    ok: false,
+                    info: api::JobInfo{
+                        id: empty.clone(),
+                        name: empty.clone(),
+                        state: api::JobState::NotStarted,
+                        step: empty.clone(),
+                        total_steps: 0,
+                        last_completed_stage: 0,
+                    }
+                };
+                jobs.push(item);
+            },
+        };
     }
 
     ApiResponse::ok(serde_json::to_value(jobs).unwrap())
@@ -90,18 +114,22 @@ pub fn job_status(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
 
     match session.job_info(id) {
         Some(info) => {
-            let resp = api::JobInfo{
-                id: session::uuid_to_str(&id),
-                name: info.name,
-                status: job_state_to_str(info.state),
-                step: step_to_str(info.step),
-                total_steps: info.total_steps,
-                last_completed_stage: info.last_completed_stage,
-            };
-
-            ApiResponse::ok(serde_json::to_value(resp).unwrap())
+            match info {
+                Ok(info) => {
+                    let resp = api::JobInfo{
+                        id: session::uuid_to_str(&id),
+                        name: info.name,
+                        state: mmb_state_to_job_state(info.state),
+                        step: step_to_str(info.step),
+                        total_steps: info.total_steps,
+                        last_completed_stage: info.last_completed_stage,
+                    };
+                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                },
+                Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+            }
         },
-        None => ApiResponse::fail(Status::BadRequest,String::from("Unknown job id")),
+        None => ApiResponse::fail(Status::BadRequest, String::from("Unknown job id")),
     }
 }
 
@@ -128,8 +156,8 @@ pub fn resume_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
             let data = api::JobInfo{
                 id: session::uuid_to_str(&id),
                 name: info.name,
-                status: job_state_to_str(job::State::Running),
-                step: step_to_str(0),
+                state: mmb_state_to_job_state(info.state),
+                step: step_to_str(info.step),
                 total_steps: info.total_steps,
                 last_completed_stage: info.last_completed_stage,
             };
@@ -159,8 +187,8 @@ pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
             let data = api::JobInfo{
                 id: session::uuid_to_str(&id),
                 name: info.name,
-                status: job_state_to_str(job::State::Running),
-                step: step_to_str(0),
+                state: mmb_state_to_job_state(info.state),
+                step: step_to_str(info.step),
                 total_steps: info.total_steps,
                 last_completed_stage: info.last_completed_stage,
             };
@@ -178,16 +206,25 @@ pub fn stop_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
 
     match session.stop_job(id) {
         Ok(_) => {
-            let info = session.job_info(id).unwrap();
-            let out = api::JobInfo{
-                id: session::uuid_to_str(&id),
-                name: info.name,
-                status: job_state_to_str(info.state),
-                step: step_to_str(0), // FIXME
-                total_steps: 0, // FIXME
-                last_completed_stage: info.last_completed_stage,
-            };
-            ApiResponse::ok(serde_json::to_value(out).unwrap())
+            match session.job_info(id) {
+                Some(info) => {
+                    match info {
+                        Ok(info) => {
+                            let resp = api::JobInfo{
+                                id: session::uuid_to_str(&id),
+                                name: info.name,
+                                state: mmb_state_to_job_state(info.state),
+                                step: step_to_str(info.step),
+                                total_steps: info.total_steps,
+                                last_completed_stage: info.last_completed_stage,
+                            };
+                            ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                        },
+                        Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+                    }
+                },
+                None => ApiResponse::fail(Status::BadRequest, String::from("Unknown job id")),
+            }
         },
         Err(e) => ApiResponse::fail(Status::BadRequest, e),
     }

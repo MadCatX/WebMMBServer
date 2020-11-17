@@ -14,7 +14,7 @@ fn keyless_commands_item(keyless: &Vec<String>) -> String {
     keyless.iter().fold(String::new(), |p, c| format!("{}\n{}\n", p, c))
 }
 
-fn mapped_commands_to_txt(data: &serde_json::Value) -> Option<(String, i32)> {
+fn mapped_commands_to_txt(data: &serde_json::Value) -> Option<String> {
     let parsed: serde_json::Result<HashMap<String, Vec<String>>> = serde_json::from_value(data.clone());
     if parsed.is_err() {
         return None;
@@ -43,25 +43,11 @@ fn mapped_commands_to_txt(data: &serde_json::Value) -> Option<(String, i32)> {
         }
     }
 
-    // FIXME: This is rather hacky but MMB does not tell us anything
-    let total_steps = match mapped.get("numReportingIntervals") {
-        None => -1,
-        Some(vals)=> {
-            if vals.len() != 1 {
-                return None
-            }
-            match vals[0].parse::<i32>() {
-                Ok(n) => n,
-                Err(_) => return None,
-            }
-        },
-    };
-
     txt.push_str(keyless.as_str());
-    Some((txt, total_steps))
+    Some(txt)
 }
 
-pub fn write_commands(path: &PathBuf, commands: &serde_json::Value) -> Result<i32, String> {
+pub fn write_commands(path: &PathBuf, commands: &serde_json::Value) -> Result<(), String> {
     let parsed = mapped_commands_to_txt(&commands);
     if parsed.is_none() {
         return Err(String::from("Invalid MMB commands"));
@@ -72,10 +58,10 @@ pub fn write_commands(path: &PathBuf, commands: &serde_json::Value) -> Result<i3
         Err(e) => return Err(e.to_string())
     };
 
-    let (txt_cmds, total_steps) = parsed.unwrap();
+    let txt_cmds = parsed.unwrap();
 
     match fh.write_all(txt_cmds.as_bytes()) {
-        Ok(_) => Ok(total_steps),
+        Ok(_) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
 }
