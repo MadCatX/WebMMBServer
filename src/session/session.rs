@@ -171,6 +171,15 @@ impl Session {
         }
     }
 
+    pub fn job_last_completed_stage(&self, id: Uuid) -> Option<i32> {
+        let data = self.data.read().unwrap();
+
+        match data.jobs.get(&id) {
+            Some(job) => Some(job.last_completed_stage()),
+            None => None
+        }
+    }
+
     pub fn resume_job(&self, id: &Uuid, commands: serde_json::Value) -> Result<job::JobInfo, String> {
         let mut data = self.data.write().unwrap();
 

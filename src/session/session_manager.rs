@@ -51,8 +51,8 @@ impl<'a> SessionManager {
         }
     }
 
-    pub fn get_session(&self, username: String) -> Option<Arc<Session>> {
-        match self.sessions.get(&username) {
+    pub fn get_session(&self, username: &String) -> Option<Arc<Session>> {
+        match self.sessions.get(username) {
             Some(s) => Some(s.clone()),
             None => None,
         }

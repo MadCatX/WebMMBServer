@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::mmb;
 
-pub fn trajectory_file_path(base: &PathBuf, username: &str, id_str: &str, stage :i32) -> Result<PathBuf, ()> {
+pub fn trajectory_file_path(base: &PathBuf, username: &str, id_str: &str, stage: i32) -> Result<PathBuf, ()> {
     if uuid::Uuid::parse_str(id_str).is_err() {
         return Err(());
     };

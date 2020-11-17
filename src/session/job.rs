@@ -192,6 +192,10 @@ impl Job {
         }
     }
 
+    pub fn last_completed_stage(&self) -> i32 {
+        get_last_completed_stage(&self.job_dir)
+    }
+
     pub fn resume(&mut self, commands: serde_json::Value) -> Result<Option<JobInfo>, String> {
         match mmb::commands::write_commands(&self.cmds_path, &commands) {
             Ok(_) => {
