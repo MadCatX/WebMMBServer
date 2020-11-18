@@ -23,7 +23,7 @@ pub enum ApiRequest {
 
 #[derive(Deserialize)]
 pub struct AuthRequestData {
-    pub username: String,
+    pub session_id: String,
 }
 
 #[derive(Deserialize)]
@@ -93,5 +93,5 @@ pub struct JobListItem {
 
 #[derive(Serialize)]
 pub struct SessionInfo {
-    pub username: String,
+    pub id: String,
 }

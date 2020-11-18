@@ -39,8 +39,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for User {
 
 fn get_session(cookies: &mut Cookies, state: State<AppState>) -> Option<Arc<Session>> {
     match session_cookie::get_session_username(cookies) {
-        Some(username) => {
-            state.sm.write().unwrap().get_session(&username)
+        Some(session_id) => {
+            state.sm.write().unwrap().get_session(&session_id)
         },
         None => {
             None
@@ -79,19 +79,13 @@ fn auth_page() -> Result<NamedFile, WMSError> {
 #[post("/auth", data = "<auth>")]
 fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppState>) -> Result<Redirect, WMSError> {
     match auth {
-        api::AuthRequest::LogIn(v) => {
-            if v.username.len() < 1 {
-                return Err(WMSError{ status: Status::BadRequest });
-            }
-
-            let c = session_cookie::make_auth_cookie(v.username.clone());
+        api::AuthRequest::LogIn(_) => {
+            let id = session::new_uuid();
+            let c = session_cookie::make_auth_cookie(session::uuid_to_str(&id));
             cookies.add_private(c);
-            match state.sm.write().unwrap().create_session(v.username) {
+            match state.sm.write().unwrap().create_session(&id) {
                 Ok(_) => Ok(Redirect::to(uri!(index_authorized))),
-                Err(e) => {
-                    println!("{}", e);
-                    Err(WMSError{ status: Status::BadRequest })
-                }
+                Err(e) => Err(WMSError{ status: Status::InternalServerError }),
             }
         },
         api::AuthRequest::LogOut(_) => {
@@ -131,8 +125,7 @@ fn index(mut cookies: Cookies, state: State<AppState>) -> Redirect {
 fn index_authorized(_user: User, mut cookies: Cookies, state: State<AppState>) -> Result<NamedFile, WMSError> {
     match get_session_authorized(&mut cookies, state) {
         Some(s) => {
-            let file = NamedFile::open("assets/index.html");
-            match file {
+            match NamedFile::open("assets/index.html") {
                 Ok(f) => Ok(f),
                 Err(_) => Err(WMSError{ status: Status::NotFound })
             }
@@ -165,19 +158,23 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
     }
 }
 
-#[get("/structure/<username>/<id_str>/<stage>", rank = 1)]
-fn structure(username: String, id_str: String, stage: String, state: State<AppState>) -> Result<PdbFile, WMSError> {
+#[get("/structure/<session_id>/<job_id>/<stage>", rank = 1)]
+fn structure(session_id: String, job_id: String, stage: String, state: State<AppState>) -> Result<PdbFile, WMSError> {
+    let sid = match uuid::Uuid::parse_str(session_id.as_str()) {
+        Ok(sid) => sid,
+        Err(_) => return Err(WMSError{ status: Status::NotFound }),
+    };
+    if uuid::Uuid::parse_str(job_id.as_str()).is_err() {
+        return Err(WMSError{ status: Status::NotFound });
+    }
+
     if stage.to_lowercase() == "last" {
-        match state.sm.read().unwrap().get_session(&username) {
+        match state.sm.read().unwrap().get_session(&sid) {
             Some(session) => {
-                let id = uuid::Uuid::parse_str(id_str.as_str());
-                if id.is_err() {
-                    return Err(WMSError{ status: Status::NotFound });
-                }
-                let stage_num = session.job_last_completed_stage(id.unwrap());
+                let stage_num = session.job_last_completed_stage(&sid);
                 match stage_num {
                     Some(stage_num) => {
-                        match session::trajectory_file_path(&state.jobs_dir, username.as_str(), id_str.as_str(), if stage_num == 0 { 1 } else { stage_num }) {
+                        match session::trajectory_file_path(&state.jobs_dir, session_id.as_str(), job_id.as_str(), if stage_num == 0 { 1 } else { stage_num }) {
                             Ok(path) => return Ok(PdbFile{ path }),
                             Err(_) => return Err(WMSError{ status: Status::NotFound }),
                         }
@@ -194,7 +191,7 @@ fn structure(username: String, id_str: String, stage: String, state: State<AppSt
         return Err(WMSError{ status: Status::BadRequest });
     }
 
-    match session::trajectory_file_path(&state.jobs_dir, username.as_str(), id_str.as_str(), stage_num.unwrap()) {
+    match session::trajectory_file_path(&state.jobs_dir, session_id.as_str(), job_id.as_str(), stage_num.unwrap()) {
         Ok(path) => Ok(PdbFile{ path }),
         Err(_) => Err(WMSError{ status: Status::NotFound }),
     }

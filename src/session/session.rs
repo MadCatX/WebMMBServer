@@ -9,13 +9,13 @@ use crate::session;
 use crate::session::job;
 
 struct SessionData {
-    username: String,
     jobs: HashMap<Uuid, job::Job>,
     is_logged_in: bool,
 }
 
 pub struct Session {
     data: RwLock<SessionData>,
+    id: Uuid,
     mmb_exec_path: PathBuf,
     mmb_parameters_path: PathBuf,
     jobs_dir: PathBuf,
@@ -41,7 +41,7 @@ fn prepare_job_dir(root: &PathBuf, id: &Uuid, params: &PathBuf) -> Result<PathBu
 }
 
 impl Session {
-    pub fn create(username: String, is_logged_in: bool, mmb_exec_path: PathBuf, mmb_parameters_path: PathBuf, jobs_dir: PathBuf) -> Result<Session, String> {
+    pub fn create(id: Uuid, is_logged_in: bool, mmb_exec_path: PathBuf, mmb_parameters_path: PathBuf, jobs_dir: PathBuf) -> Result<Session, String> {
         let mut db = DirBuilder::new();
         db.recursive(false);
         match db.create(&jobs_dir) {
@@ -49,12 +49,12 @@ impl Session {
                 Ok(Session {
                     data: RwLock::new(
                         SessionData {
-                            username,
                             jobs: HashMap::new(),
                             is_logged_in,
                         
                         }
                     ),
+                    id,
                     mmb_exec_path,
                     mmb_parameters_path,
                     jobs_dir,
@@ -136,6 +136,10 @@ impl Session {
         self.data.read().unwrap().jobs.contains_key(id)
     }
 
+    pub fn id(&self) -> Uuid {
+        self.id.clone()
+    }
+
     pub fn is_logged_in(&self) -> bool {
         let data = self.data.read().unwrap();
 
@@ -171,7 +175,7 @@ impl Session {
         }
     }
 
-    pub fn job_last_completed_stage(&self, id: Uuid) -> Option<i32> {
+    pub fn job_last_completed_stage(&self, id: &Uuid) -> Option<i32> {
         let data = self.data.read().unwrap();
 
         match data.jobs.get(&id) {
@@ -220,11 +224,5 @@ impl Session {
             Some(job) => return job.stop(),
             None => return Err(String::from("No such job")),
         }
-    }
-
-    pub fn username(&self) -> String {
-        let data = self.data.read().unwrap();
-
-        data.username.clone()
     }
 }

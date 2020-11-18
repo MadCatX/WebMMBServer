@@ -168,9 +168,9 @@ pub fn resume_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
 }
 
 pub fn session_info(session: Arc<Session>) -> ApiResponse {
-    let username = session.username();
+    let id = session::uuid_to_str(&session.id());
 
-    let info = api::SessionInfo{ username };
+    let info = api::SessionInfo{ id };
     ApiResponse::ok(serde_json::to_value(info).unwrap())
 }
 
