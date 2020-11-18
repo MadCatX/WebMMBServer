@@ -79,13 +79,29 @@ fn auth_page() -> Result<NamedFile, WMSError> {
 #[post("/auth", data = "<auth>")]
 fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppState>) -> Result<Redirect, WMSError> {
     match auth {
-        api::AuthRequest::LogIn(_) => {
-            let id = session::new_uuid();
-            let c = session_cookie::make_auth_cookie(session::uuid_to_str(&id));
-            cookies.add_private(c);
-            match state.sm.write().unwrap().create_session(&id) {
-                Ok(_) => Ok(Redirect::to(uri!(index_authorized))),
-                Err(e) => Err(WMSError{ status: Status::InternalServerError }),
+        api::AuthRequest::LogIn(data) => {
+            if data.session_id == "" {
+                let id = session::new_uuid();
+                let c = session_cookie::make_auth_cookie(session::uuid_to_str(&id));
+                cookies.add_private(c);
+                match state.sm.write().unwrap().create_session(&id) {
+                    Ok(_) => Ok(Redirect::to(uri!(index_authorized))),
+                    Err(e) => Err(WMSError{ status: Status::InternalServerError }),
+                }
+            } else {
+                let id = match session::str_to_uuid(data.session_id.as_str().trim()) {
+                    Ok(id) => id,
+                    Err(e) => return Err(WMSError{ status: Status::BadRequest }),
+                };
+                match state.sm.write().unwrap().get_session(&id) {
+                    Some(session) => {
+                        let c = session_cookie::make_auth_cookie(session::uuid_to_str(&id));
+                        cookies.add_private(c);
+                        session.set_login_state(true);
+                        Ok(Redirect::to(uri!(index_authorized)))
+                    },
+                    None => Err(WMSError{ status: Status::BadRequest }),
+                }
             }
         },
         api::AuthRequest::LogOut(_) => {

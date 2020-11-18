@@ -19,7 +19,11 @@ pub fn trajectory_file_path(base: &PathBuf, session_id: &str, job_id: &str, stag
 }
 
 pub fn new_uuid() -> Uuid {
-    uuid::Uuid::new_v4()
+    Uuid::new_v4()
+}
+
+pub fn str_to_uuid(s: &str) -> Result<Uuid, uuid::Error> {
+    return Uuid::parse_str(s);
 }
 
 pub fn uuid_to_str(uuid: &Uuid) -> String {
