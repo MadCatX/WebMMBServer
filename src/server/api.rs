@@ -1,3 +1,4 @@
+use rocket::http::Status;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -50,6 +51,18 @@ pub struct StartJobRqData {
 }
 
 /* Responses */
+
+pub struct ApiResponse {
+    pub is_ok: bool,
+    pub ok_data: Option<serde_json::Value>,
+    pub fail_data: Option<(Status, String)>,
+}
+
+#[derive(Debug)]
+pub struct AuthFailResponse {
+    pub status: Status,
+    pub reason: String,
+}
 
 #[derive(Serialize)]
 pub enum JobState {

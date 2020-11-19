@@ -7,23 +7,17 @@ use serde_json;
 
 use crate::server::api;
 
-pub struct ApiResponse {
-    is_ok: bool,
-    pub ok_data: Option<serde_json::Value>,
-    pub fail_data: Option<(Status, String)>,
-}
-
-impl ApiResponse {
-    pub fn ok(data: serde_json::Value) -> ApiResponse {
-        ApiResponse{is_ok: true, ok_data: Some(data), fail_data: None}
+impl api::ApiResponse {
+    pub fn ok(data: serde_json::Value) -> api::ApiResponse {
+        api::ApiResponse{is_ok: true, ok_data: Some(data), fail_data: None}
     }
 
-    pub fn fail(status: Status, message: String) -> ApiResponse {
-        ApiResponse{is_ok: false, ok_data: None, fail_data: Some((status, message))}
+    pub fn fail(status: Status, message: String) -> api::ApiResponse {
+        api::ApiResponse{is_ok: false, ok_data: None, fail_data: Some((status, message))}
     }
 }
 
-impl<'a> Responder<'a> for ApiResponse {
+impl<'a> Responder<'a> for api::ApiResponse {
     fn respond_to(self, _: &Request) -> response::Result<'a> {
         if self.is_ok {
             let payload = api::OkResponse{ success: true, data: self.ok_data.unwrap()};
@@ -51,6 +45,16 @@ impl<'a> Responder<'a> for ApiResponse {
                 Err(_) => Err(Status::InternalServerError)
             }
         }
+    }
+}
+
+impl<'a> Responder<'a> for api::AuthFailResponse {
+    fn respond_to(self, _: &Request) -> response::Result<'a> {
+        Ok(Response::build()
+            .status(self.status)
+            .header(ContentType::Plain)
+            .sized_body(Cursor::new(self.reason))
+            .finalize())
     }
 }
 

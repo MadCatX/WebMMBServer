@@ -7,7 +7,7 @@ use crate::mmb;
 use crate::session;
 use crate::session::session::Session;
 use crate::server::api;
-use crate::server::responders::ApiResponse;
+use crate::server::api::ApiResponse;
 
 fn handle_simple_rq_data(data: serde_json::Value) -> Result<Uuid, String> {
     let parsed: serde_json::Result<api::SimpleJobRqData> = serde_json::from_value(data);

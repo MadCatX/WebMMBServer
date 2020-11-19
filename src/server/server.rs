@@ -13,7 +13,7 @@ use crate::session;
 use crate::session::session_manager::SessionManager;
 use crate::server::api;
 use crate::server::request_handlers;
-use crate::server::responders::{ApiResponse, PdbFile, WMSError};
+use crate::server::responders::{PdbFile, WMSError};
 use crate::session::session::Session;
 use crate::server::session_cookie;
 
@@ -77,7 +77,7 @@ fn auth_page() -> Result<NamedFile, WMSError> {
 }
 
 #[post("/auth", data = "<auth>")]
-fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppState>) -> Result<Redirect, WMSError> {
+fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppState>) -> Result<Redirect, api::AuthFailResponse> {
     match auth {
         api::AuthRequest::LogIn(data) => {
             if data.session_id == "" {
@@ -86,12 +86,12 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
                 cookies.add_private(c);
                 match state.sm.write().unwrap().create_session(&id) {
                     Ok(_) => Ok(Redirect::to(uri!(index_authorized))),
-                    Err(e) => Err(WMSError{ status: Status::InternalServerError }),
+                    Err(e) => Err(api::AuthFailResponse{status: Status::InternalServerError, reason: e.to_string()}),
                 }
             } else {
                 let id = match session::str_to_uuid(data.session_id.as_str().trim()) {
                     Ok(id) => id,
-                    Err(e) => return Err(WMSError{ status: Status::BadRequest }),
+                    Err(_) => return Err(api::AuthFailResponse{status: Status::BadRequest, reason: String::from("Invalid session ID")}),
                 };
                 match state.sm.write().unwrap().get_session(&id) {
                     Some(session) => {
@@ -100,7 +100,7 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
                         session.set_login_state(true);
                         Ok(Redirect::to(uri!(index_authorized)))
                     },
-                    None => Err(WMSError{ status: Status::BadRequest }),
+                    None => Err(api::AuthFailResponse{status: Status::BadRequest, reason: String::from("No such session")}),
                 }
             }
         },
@@ -156,7 +156,7 @@ fn static_files(file: PathBuf) -> Option<NamedFile> {
 }
 
 #[post("/api", format = "application/json", data = "<req>")]
-fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Result<ApiResponse, WMSError> {
+fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Result<api::ApiResponse, WMSError> {
     let s = match get_session_authorized(&mut cookies, state) {
         Some(s) => s,
         None => return Err(WMSError{ status: Status::Forbidden }),
@@ -176,18 +176,19 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
 
 #[get("/structure/<session_id>/<job_id>/<stage>", rank = 1)]
 fn structure(session_id: String, job_id: String, stage: String, state: State<AppState>) -> Result<PdbFile, WMSError> {
-    let sid = match uuid::Uuid::parse_str(session_id.as_str()) {
+    let sid = match session::str_to_uuid(session_id.as_str()) {
         Ok(sid) => sid,
         Err(_) => return Err(WMSError{ status: Status::NotFound }),
     };
-    if uuid::Uuid::parse_str(job_id.as_str()).is_err() {
-        return Err(WMSError{ status: Status::NotFound });
-    }
+    let jid = match session::str_to_uuid(job_id.as_str()) {
+        Ok(jid) => jid,
+        Err(_) => return Err(WMSError{ status: Status::NotFound }),
+    };
 
     if stage.to_lowercase() == "last" {
         match state.sm.read().unwrap().get_session(&sid) {
             Some(session) => {
-                let stage_num = session.job_last_completed_stage(&sid);
+                let stage_num = session.job_last_completed_stage(&jid);
                 match stage_num {
                     Some(stage_num) => {
                         match session::trajectory_file_path(&state.jobs_dir, session_id.as_str(), job_id.as_str(), if stage_num == 0 { 1 } else { stage_num }) {

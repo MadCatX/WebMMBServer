@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::thread;
 use std::time::Duration;
+use file_lock::FileLock;
 use serde_json;
 
 use crate::mmb;
@@ -109,13 +110,18 @@ fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
 }
 
 fn read_mmb_progress(path: &PathBuf) -> Result<(mmb::State, i32, i32), String> {
-    let fh = std::fs::File::open(path);
-    if fh.is_err() {
-        return Err(String::from("No progress report file"));
+    let path_str = path.to_str();
+    if path_str.is_none() {
+        return Err(String::from("Invalid progress file path"));
+    }
+
+    let locked = FileLock::lock(path_str.unwrap(), false, false);
+    if locked.is_err() {
+        return Err(String::from("Progress file is missing or inaccessible"));
     }
 
     let mut s = String::new();
-    if fh.unwrap().read_to_string(&mut s).is_err() {
+    if locked.unwrap().file.read_to_string(&mut s).is_err() {
         return Err(String::from("Cannot read progress report file"));
     }
 
