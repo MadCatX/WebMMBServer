@@ -34,6 +34,7 @@ pub struct Config {
 
     pub root_dir: String,
 
+    pub domain: String,
     pub port: u16,
 }
 
@@ -47,6 +48,9 @@ impl Config {
         check_file_exists(cfg.mmb_exec_path.as_str());
         check_file_exists(cfg.mmb_parameters_path.as_str());
         check_dir_exists(cfg.root_dir.as_str());
+        if cfg.domain.len() < 1 {
+            panic!("No domain");
+        }
         if cfg.port == 0 {
             panic!("Invalid port number");
         }

@@ -1,9 +1,9 @@
 use rocket::http::{Cookie, Cookies};
 use uuid::Uuid;
 
-pub fn make_auth_cookie(session_id: String) -> Cookie<'static> {
+pub fn make_auth_cookie(domain: String, session_id: String) -> Cookie<'static> {
     Cookie::build("auth", session_id)
-        .domain("localhost")
+        .domain(domain)
         .path("/")
         .finish()
 }

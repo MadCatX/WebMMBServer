@@ -20,6 +20,7 @@ use crate::server::session_cookie;
 struct AppState {
     pub sm: RwLock<SessionManager>,
     pub jobs_dir: PathBuf,
+    pub domain: String,
 }
 
 #[derive(Debug)]
@@ -82,7 +83,7 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
         api::AuthRequest::LogIn(data) => {
             if data.session_id == "" {
                 let id = session::new_uuid();
-                let c = session_cookie::make_auth_cookie(session::uuid_to_str(&id));
+                let c = session_cookie::make_auth_cookie(state.domain.clone(), session::uuid_to_str(&id));
                 cookies.add_private(c);
                 match state.sm.write().unwrap().create_session(&id) {
                     Ok(_) => Ok(Redirect::to(uri!(index_authorized))),
@@ -95,7 +96,7 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
                 };
                 match state.sm.write().unwrap().get_session(&id) {
                     Some(session) => {
-                        let c = session_cookie::make_auth_cookie(session::uuid_to_str(&id));
+                        let c = session_cookie::make_auth_cookie(state.domain.clone(), session::uuid_to_str(&id));
                         cookies.add_private(c);
                         session.set_login_state(true);
                         Ok(Redirect::to(uri!(index_authorized)))
@@ -226,6 +227,7 @@ pub fn start(cfg: Arc<Config>) {
         .manage( AppState{
             sm: RwLock::new(SessionManager::create(cfg.clone())),
             jobs_dir: PathBuf::from(cfg.jobs_dir.as_str()),
+            domain: cfg.domain.clone(),
         })
         .launch();
 }
