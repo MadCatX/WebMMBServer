@@ -65,7 +65,10 @@ fn get_session_authorized(cookies: &mut Cookies, state: State<AppState>) -> Opti
 fn auth_already_authenticated(_user: User, mut cookies: Cookies, state: State<AppState>) -> Redirect {
     match get_session_authorized(&mut cookies, state) {
         Some(_) => Redirect::to(uri!(index_authorized)),
-        None => Redirect::to(uri!(auth_page)),
+        None => {
+            session_cookie::remove_session_cookie(&mut cookies);
+            Redirect::to(uri!(auth_page))
+        },
     }
 }
 
