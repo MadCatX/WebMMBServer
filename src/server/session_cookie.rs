@@ -10,7 +10,7 @@ pub fn make_auth_cookie(domain: String, session_id: String) -> Cookie<'static> {
         .finish()
 }
 
-pub fn get_session_username(cookies: &mut Cookies) -> Option<Uuid> {
+pub fn get_session_id(cookies: &mut Cookies) -> Option<Uuid> {
     match cookies.get_private(AuthName) {
         Some(c) => {
             match Uuid::parse_str(c.value()) {

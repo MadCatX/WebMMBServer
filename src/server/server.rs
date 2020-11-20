@@ -24,22 +24,29 @@ struct AppState {
 }
 
 #[derive(Debug)]
-struct User(String);
+struct SessionId(String);
 
-impl<'a, 'r> FromRequest<'a, 'r> for User {
+fn check_str_is_uuid(s: String) -> Option<String> {
+    match session::str_to_uuid(s.as_str()) {
+        Ok(_) => Some(s),
+        Err(_) => None,
+    }
+}
+
+impl<'a, 'r> FromRequest<'a, 'r> for SessionId {
     type Error = std::convert::Infallible;
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<User, Self::Error> {
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<SessionId, Self::Error> {
         request.cookies()
             .get_private("auth")
-            .and_then(|c| Some(String::from(c.value())))
-            .map(|username| User(username))
+            .and_then(|c| check_str_is_uuid(String::from(c.value())))
+            .map(|session_id| SessionId(session_id))
             .or_forward(())
     }
 }
 
 fn get_session(cookies: &mut Cookies, state: State<AppState>) -> Option<Arc<Session>> {
-    match session_cookie::get_session_username(cookies) {
+    match session_cookie::get_session_id(cookies) {
         Some(session_id) => {
             state.sm.write().unwrap().get_session(&session_id)
         },
@@ -62,7 +69,7 @@ fn get_session_authorized(cookies: &mut Cookies, state: State<AppState>) -> Opti
 }
 
 #[get("/auth")]
-fn auth_already_authenticated(_user: User, mut cookies: Cookies, state: State<AppState>) -> Redirect {
+fn auth_already_authenticated(_sid: SessionId, mut cookies: Cookies, state: State<AppState>) -> Redirect {
     match get_session_authorized(&mut cookies, state) {
         Some(_) => Redirect::to(uri!(index_authorized)),
         None => {
@@ -137,7 +144,7 @@ fn index(mut cookies: Cookies, state: State<AppState>) -> Redirect {
 }
 
 #[get("/")]
-fn index_authorized(_user: User, mut cookies: Cookies, state: State<AppState>) -> Result<NamedFile, WMSError> {
+fn index_authorized(_sid: SessionId, mut cookies: Cookies, state: State<AppState>) -> Result<NamedFile, WMSError> {
     match get_session_authorized(&mut cookies, state) {
         Some(s) => {
             match NamedFile::open("assets/index.html") {
