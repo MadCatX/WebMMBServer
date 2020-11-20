@@ -19,3 +19,10 @@ pub fn get_session_username(cookies: &mut Cookies) -> Option<Uuid> {
         None => None,
     }
 }
+
+pub fn remove_session_cookie(cookies: &mut Cookies) {
+    match cookies.get_private("auth") {
+        Some(c) => cookies.remove_private(c),
+        None => {},
+    }
+}

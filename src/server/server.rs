@@ -112,10 +112,7 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
                 },
                 None => {},
             }
-            match cookies.get_private("auth") {
-                Some(c) => cookies.remove_private(c),
-                None => {},
-            }
+            session_cookie::remove_session_cookie(&mut cookies);
             Ok(Redirect::to(uri!(auth_page)))
         }
     }
@@ -128,13 +125,11 @@ fn index(mut cookies: Cookies, state: State<AppState>) -> Redirect {
             if s.is_logged_in() {
                 return Redirect::to(uri!(index_authorized));
             } else {
+                session_cookie::remove_session_cookie(&mut cookies);
                 return Redirect::to(uri!(auth_page));
             }
         },
-        None => {
-            println!("No session");
-            Redirect::to(uri!(auth_page))
-        },
+        None => Redirect::to(uri!(auth_page)),
     }
 }
 
@@ -147,7 +142,10 @@ fn index_authorized(_user: User, mut cookies: Cookies, state: State<AppState>) -
                 Err(_) => Err(WMSError{ status: Status::NotFound })
             }
         },
-        None => Err(WMSError{ status: Status::Forbidden }),
+        None => {
+            session_cookie::remove_session_cookie(&mut cookies);
+            Err(WMSError{ status: Status::Forbidden })
+        },
     }
 }
 
