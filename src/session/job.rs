@@ -12,6 +12,7 @@ use crate::mmb;
 
 const CMDS_FILE_NAME: &'static str = "commands.txt";
 const PGRS_FILE_NAME: &'static str = "progress.json";
+const DOUT_FILE_NAME: &'static str = "doutput.txt";
 
 #[derive(Clone)]
 pub struct JobInfo {
@@ -29,6 +30,7 @@ pub struct Job {
     cmds_path: PathBuf,
     mmb_exec_path: PathBuf,
     progress_path: PathBuf,
+    diag_output_path: PathBuf,
     mmb_process: Option<Child>,
 }
 
@@ -144,6 +146,9 @@ impl Job {
         let mut progress_path = PathBuf::new();
         progress_path.push(&job_dir); progress_path.push(PGRS_FILE_NAME);
 
+        let mut diag_output_path = PathBuf::new();
+        diag_output_path.push(&job_dir); diag_output_path.push(DOUT_FILE_NAME);
+
         match mmb::commands::write_commands(&cmds_path, &commands) {
             Ok(()) => Ok(Job{
                 name,
@@ -152,6 +157,7 @@ impl Job {
                 cmds_path,
                 mmb_exec_path,
                 progress_path,
+                diag_output_path,
                 mmb_process: None,
             }),
             Err(e) => Err(e.to_string())
@@ -225,6 +231,7 @@ impl Job {
             .current_dir(&self.job_dir)
             .arg(&self.cmds_path)
             .arg(&self.progress_path)
+            .arg(&self.diag_output_path)
             .spawn() {
                 Ok(proc) => proc,
                 Err(_) => return Err(String::from("Failed to start MMB process"))
@@ -233,6 +240,19 @@ impl Job {
         self.mmb_process = Some(proc);
 
         Ok(())
+    }
+
+    pub fn stdout(&self) -> Result<String, String> {
+        match std::fs::File::open(&self.diag_output_path) {
+            Ok(mut fh) => {
+                let mut buf = String::new();
+                match fh.read_to_string(&mut buf) {
+                    Ok(_) => Ok(buf),
+                    Err(e) => Err(e.to_string()),
+                }
+            },
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     pub fn stop(&mut self) -> Result<JobInfo, String> {

@@ -178,6 +178,7 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
         api::ApiRequest::DeleteJob(v) => Ok(request_handlers::delete_job(s, v.data)),
         api::ApiRequest::JobStatus(v) => Ok(request_handlers::job_status(s, v.data)),
         api::ApiRequest::ListJobs(_) => Ok(request_handlers::list_jobs(s)),
+        api::ApiRequest::MmbOutput(v) => Ok(request_handlers::mmb_output(s, v.data)),
         api::ApiRequest::JobCommands(v) => Ok(request_handlers::job_commands(s, v.data)),
         api::ApiRequest::SessionInfo(_) => Ok(request_handlers::session_info(s)),
     }

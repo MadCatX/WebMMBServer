@@ -133,6 +133,21 @@ pub fn job_status(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
     }
 }
 
+pub fn mmb_output(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let id = match handle_simple_rq_data(data) {
+        Ok(id) => id,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e),
+    };
+
+    match session.job_stdout(&id) {
+        Some(ret) => match ret {
+            Ok(txt) => ApiResponse::ok(serde_json::to_value(txt).unwrap()),
+            Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+        },
+        None => ApiResponse::fail(Status::BadRequest, String::from("Unknown job id")),
+    }
+}
+
 pub fn resume_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
     println!("resume_job handler");
     let parsed: serde_json::Result<api::ResumeJobRqData> = serde_json::from_value(data);

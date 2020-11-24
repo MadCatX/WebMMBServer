@@ -184,6 +184,15 @@ impl Session {
         }
     }
 
+    pub fn job_stdout(&self, id: &Uuid) -> Option<Result<String, String>> {
+        let mut data = self.data.write().unwrap();
+
+        match data.jobs.get_mut(&id) {
+            Some(job) => Some(job.stdout()),
+            None => None
+        }
+    }
+
     pub fn resume_job(&self, id: &Uuid, commands: serde_json::Value) -> Result<job::JobInfo, String> {
         let mut data = self.data.write().unwrap();
 

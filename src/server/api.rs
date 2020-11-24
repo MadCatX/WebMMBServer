@@ -20,6 +20,7 @@ pub enum ApiRequest {
     ListJobs(ApiRequestData),
     JobCommands(ApiRequestData),
     SessionInfo(ApiRequestData),
+    MmbOutput(ApiRequestData),
 }
 
 #[derive(Deserialize)]
