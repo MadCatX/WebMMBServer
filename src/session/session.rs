@@ -185,9 +185,9 @@ impl Session {
     }
 
     pub fn job_stdout(&self, id: &Uuid) -> Option<Result<String, String>> {
-        let mut data = self.data.write().unwrap();
+        let data = self.data.read().unwrap();
 
-        match data.jobs.get_mut(&id) {
+        match data.jobs.get(&id) {
             Some(job) => Some(job.stdout()),
             None => None
         }
