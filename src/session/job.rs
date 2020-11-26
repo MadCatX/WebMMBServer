@@ -225,6 +225,7 @@ impl Job {
     }
 
     pub fn start(&mut self) -> Result<(), String> {
+        std::fs::remove_file(&self.diag_output_path);
         // TODO: This is now tailored to the (unneccessary) runner script
 
         let proc = match Command::new(&self.mmb_exec_path)
@@ -267,19 +268,23 @@ impl Job {
         if signal::kill(Pid::from_raw(pid as i32), Signal::SIGTERM).is_err() {
             return Err(String::from("Failed to signal job process"));
         }
-        
-        let mut attempts = 0;
-        while attempts < 10 {
-            match self.mmb_process.as_mut().unwrap().try_wait() {
-                Ok(_) => break,
-                Err(_) => {},
-            }
-            attempts += 1;
-            thread::sleep(Duration::from_micros(100));
-        }
 
-        if self.mmb_process.as_mut().unwrap().kill().is_err() {
-            return Err(String::from("Failed to kill job process"));
+        let terminated = || -> bool {
+            let mut attempts = 0;
+            while attempts < 10 {
+                if self.mmb_process.as_mut().unwrap().try_wait().is_ok() {
+                    return true;
+                }
+                attempts += 1;
+                thread::sleep(Duration::from_micros(100));
+            }
+            false
+        }();
+
+        if !terminated {
+            if self.mmb_process.as_mut().unwrap().kill().is_err() {
+                return Err(String::from("Failed to kill job process"));
+            }
         }
 
         match self.info() {
