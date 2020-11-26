@@ -67,7 +67,7 @@ fn get_last_completed_stage(path: &PathBuf) -> i32 {
                 continue;
             }
 
-            if !name.unwrap().starts_with("last.") {
+            if !name.unwrap().starts_with("trajectory.") {
                 continue;
             }
 
