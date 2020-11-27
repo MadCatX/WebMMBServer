@@ -13,6 +13,8 @@ use crate::mmb;
 const CMDS_FILE_NAME: &'static str = "commands.txt";
 const PGRS_FILE_NAME: &'static str = "progress.json";
 const DOUT_FILE_NAME: &'static str = "doutput.txt";
+const LAST_FRAME_FILE_PREFIX: &'static str = "last";
+const TRAJECTORY_FILE_PREFIX: &'static str = "trajectory";
 
 #[derive(Clone)]
 pub struct JobInfo {
@@ -20,6 +22,7 @@ pub struct JobInfo {
     pub state: mmb::State,
     pub step: i32,
     pub total_steps: i32, 
+    pub last_available_stage: i32,
     pub last_completed_stage: i32,
 }
 
@@ -34,13 +37,14 @@ pub struct Job {
     mmb_process: Option<Child>,
 }
 
-fn get_last_completed_stage(path: &PathBuf) -> i32 {
+fn get_stage_num(path: &PathBuf, file_name: &str) -> i32 {
     let dir_lister = std::fs::read_dir(path);
     if dir_lister.is_err() {
         return 0;
     }
 
-    let mut last_stage = 0;
+    let name_prefix = format!("{}.", file_name);
+    let mut stage_num = 0;
     for entry in dir_lister.unwrap() {
         if entry.is_err() {
             continue;
@@ -67,7 +71,7 @@ fn get_last_completed_stage(path: &PathBuf) -> i32 {
                 continue;
             }
 
-            if !name.unwrap().starts_with("trajectory.") {
+            if !name.unwrap().starts_with(name_prefix.as_str()) {
                 continue;
             }
 
@@ -78,8 +82,8 @@ fn get_last_completed_stage(path: &PathBuf) -> i32 {
 
             match segs.get(1).unwrap().parse::<i32>() {
                 Ok(n) => {
-                    if n > last_stage {
-                        last_stage = n;
+                    if n > stage_num {
+                        stage_num = n;
                     }
                 }
                 Err(_) => {},
@@ -87,7 +91,7 @@ fn get_last_completed_stage(path: &PathBuf) -> i32 {
         }
     }
 
-    last_stage
+    stage_num
 }
 
 fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
@@ -201,7 +205,8 @@ impl Job {
                     state,
                     step,
                     total_steps,
-                    last_completed_stage: get_last_completed_stage(&self.job_dir),
+                    last_available_stage: self.last_available_stage(),
+                    last_completed_stage: self.last_completed_stage(),
                 };
                 if proc_state == mmb::State::Running {
                     // MMB reports the job has finished but the MMB process is still running
@@ -221,14 +226,19 @@ impl Job {
                     state: proc_state,
                     step: 0,
                     total_steps: 0,
-                    last_completed_stage: get_last_completed_stage(&self.job_dir),
+                    last_available_stage: self.last_available_stage(),
+                    last_completed_stage: self.last_completed_stage(),
                 })
             },
         }
     }
 
+    pub fn last_available_stage(&self) -> i32 {
+        get_stage_num(&self.job_dir, TRAJECTORY_FILE_PREFIX)
+    }
+
     pub fn last_completed_stage(&self) -> i32 {
-        get_last_completed_stage(&self.job_dir)
+        get_stage_num(&self.job_dir, LAST_FRAME_FILE_PREFIX)
     }
 
     pub fn resume(&mut self, commands: serde_json::Value) -> Result<Option<JobInfo>, String> {

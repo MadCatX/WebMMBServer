@@ -96,6 +96,7 @@ impl Session {
                                     state: mmb::State::Running,
                                     step: 0,
                                     total_steps: 0,
+                                    last_available_stage: 0,
                                     last_completed_stage: 0,
                                 }
                             }
@@ -175,6 +176,15 @@ impl Session {
         }
     }
 
+    pub fn job_last_available_stage(&self, id: &Uuid) -> Option<i32> {
+        let data = self.data.read().unwrap();
+
+        match data.jobs.get(&id) {
+            Some(job) => Some(job.last_available_stage()),
+            None => None
+        }
+    }
+
     pub fn job_last_completed_stage(&self, id: &Uuid) -> Option<i32> {
         let data = self.data.read().unwrap();
 
@@ -208,6 +218,7 @@ impl Session {
                                     state: mmb::State::Running,
                                     step: 0,
                                     total_steps: 0,
+                                    last_available_stage: 0,
                                     last_completed_stage: 0,
                                 })
                             },

@@ -198,7 +198,7 @@ fn structure(session_id: String, job_id: String, stage: String, state: State<App
     if stage.to_lowercase() == "last" {
         match state.sm.read().unwrap().get_session(&sid) {
             Some(session) => {
-                let stage_num = session.job_last_completed_stage(&jid);
+                let stage_num = session.job_last_available_stage(&jid);
                 match stage_num {
                     Some(stage_num) => {
                         match session::trajectory_file_path(&state.jobs_dir, session_id.as_str(), job_id.as_str(), if stage_num == 0 { 1 } else { stage_num }) {
