@@ -68,6 +68,7 @@ pub fn list_jobs(session: Arc<Session>) -> ApiResponse {
                         state: mmb_state_to_job_state(info.state),
                         step: step_to_str(info.step),
                         total_steps: info.total_steps,
+                        last_available_stage: info.last_available_stage,
                         last_completed_stage: info.last_completed_stage,
                     }
                 };
@@ -83,6 +84,7 @@ pub fn list_jobs(session: Arc<Session>) -> ApiResponse {
                         state: api::JobState::NotStarted,
                         step: empty.clone(),
                         total_steps: 0,
+                        last_available_stage: 0,
                         last_completed_stage: 0,
                     }
                 };
@@ -122,6 +124,7 @@ pub fn job_status(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
                         state: mmb_state_to_job_state(info.state),
                         step: step_to_str(info.step),
                         total_steps: info.total_steps,
+                        last_available_stage: info.last_available_stage,
                         last_completed_stage: info.last_completed_stage,
                     };
                     ApiResponse::ok(serde_json::to_value(resp).unwrap())
@@ -174,6 +177,7 @@ pub fn resume_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
                 state: mmb_state_to_job_state(info.state),
                 step: step_to_str(info.step),
                 total_steps: info.total_steps,
+                last_available_stage: info.last_available_stage,
                 last_completed_stage: info.last_completed_stage,
             };
             ApiResponse::ok(serde_json::to_value(data).unwrap())
@@ -205,6 +209,7 @@ pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
                 state: mmb_state_to_job_state(info.state),
                 step: step_to_str(info.step),
                 total_steps: info.total_steps,
+                last_available_stage: info.last_available_stage,
                 last_completed_stage: info.last_completed_stage,
             };
             ApiResponse::ok(serde_json::to_value(data).unwrap())
@@ -231,6 +236,7 @@ pub fn stop_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
                                 state: mmb_state_to_job_state(info.state),
                                 step: step_to_str(info.step),
                                 total_steps: info.total_steps,
+                                last_available_stage: info.last_available_stage,
                                 last_completed_stage: info.last_completed_stage,
                             };
                             ApiResponse::ok(serde_json::to_value(resp).unwrap())

@@ -96,6 +96,7 @@ pub struct JobInfo {
     pub state: JobState,
     pub step: String,
     pub total_steps: i32,
+    pub last_available_stage: i32,
     pub last_completed_stage: i32,
 }
 
