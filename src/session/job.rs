@@ -111,6 +111,32 @@ fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
     }
 }
 
+fn prepare_kickoff_file(path: &PathBuf, stage: i32) -> Result<(), String> {
+    if stage < 2 {
+        return Ok(());
+    }
+
+    let last_frame_file = format!("last.{}.pdb", stage);
+    let kickoff_frame_file = format!("last.{}.pdb", stage - 1);
+
+    let mut last_frame_path = PathBuf::new();
+    last_frame_path.push(path); last_frame_path.push(last_frame_file);
+    let mut kickoff_frame_path = PathBuf::new();
+    kickoff_frame_path.push(path); kickoff_frame_path.push(kickoff_frame_file);
+
+    if last_frame_path.exists() {
+        match std::fs::copy(last_frame_path, kickoff_frame_path) {
+            Ok(_) => return Ok(()),
+            Err(e) => return Err(e.to_string()),
+        };
+    } else {
+        match std::fs::File::create(kickoff_frame_path) {
+            Ok(_) => return Ok(()),
+            Err(e) => return Err(e.to_string()),
+        };
+    }
+}
+
 fn read_mmb_progress(path: &PathBuf) -> Result<(mmb::State, i32, i32), String> {
     let path_str = path.to_str();
     if path_str.is_none() {
@@ -149,19 +175,16 @@ impl Job {
         let mut diag_output_path = PathBuf::new();
         diag_output_path.push(&job_dir); diag_output_path.push(DOUT_FILE_NAME);
 
-        match mmb::commands::write_commands(&cmds_path, &commands) {
-            Ok(()) => Ok(Job{
-                name,
-                commands,
-                job_dir,
-                cmds_path,
-                mmb_exec_path,
-                progress_path,
-                diag_output_path,
-                mmb_process: None,
-            }),
-            Err(e) => Err(e.to_string())
-        }
+        Ok(Job{
+            name,
+            commands,
+            job_dir,
+            cmds_path,
+            mmb_exec_path,
+            progress_path,
+            diag_output_path,
+            mmb_process: None,
+        })
     }
 
     pub fn info(&mut self) -> Result<JobInfo, String> {
@@ -209,23 +232,45 @@ impl Job {
     }
 
     pub fn resume(&mut self, commands: serde_json::Value) -> Result<Option<JobInfo>, String> {
-        match mmb::commands::write_commands(&self.cmds_path, &commands) {
-            Ok(_) => {
-                self.commands = commands;
-                match self.start() {
-                    Ok(_) => match self.info() {
-                        Ok(info) => Ok(Some(info)),
-                        Err(_) => Ok(None),
-                    },
-                    Err(e) => Err(e),
-                }
-            }
-            Err(e) => Err(e.to_string()),
+        self.commands = commands;
+        match self.start() {
+            Ok(_) => match self.info() {
+                Ok(info) => Ok(Some(info)),
+                Err(_) => Ok(None),
+            },
+            Err(e) => Err(e),
         }
     }
 
     pub fn start(&mut self) -> Result<(), String> {
-        std::fs::remove_file(&self.diag_output_path);
+        if self.diag_output_path.exists() {
+            match std::fs::remove_file(&self.diag_output_path) {
+                Ok(_) => {},
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+
+        let mapped = match mmb::commands::json_to_mapped(&self.commands) {
+            Ok(v) => v,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let stages = mmb::commands::stages(&mapped);
+        if stages.is_none() {
+            return Err(String::from("Cannot determine stages"));
+        }
+        let first_stage = stages.unwrap().first;
+
+        match mmb::commands::write(&self.cmds_path, &mapped, first_stage) {
+            Ok(_) => {},
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match prepare_kickoff_file(&self.job_dir, first_stage) {
+            Ok(_) => {},
+            Err(e) => return Err(e),
+        }
+
         // TODO: This is now tailored to the (unneccessary) runner script
 
         let proc = match Command::new(&self.mmb_exec_path)
