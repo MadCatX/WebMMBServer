@@ -98,6 +98,7 @@ impl Session {
                                     total_steps: 0,
                                     last_available_stage: 0,
                                     last_completed_stage: 0,
+                                    created_on: 0,
                                 }
                             }
                         };
@@ -220,6 +221,7 @@ impl Session {
                                     total_steps: 0,
                                     last_available_stage: 0,
                                     last_completed_stage: 0,
+                                    created_on: 0,
                                 })
                             },
                         }

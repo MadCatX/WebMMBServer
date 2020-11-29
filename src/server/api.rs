@@ -98,6 +98,7 @@ pub struct JobInfo {
     pub total_steps: i32,
     pub last_available_stage: i32,
     pub last_completed_stage: i32,
+    pub created_on: String,
 }
 
 #[derive(Serialize)]

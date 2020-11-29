@@ -24,6 +24,7 @@ pub struct JobInfo {
     pub total_steps: i32, 
     pub last_available_stage: i32,
     pub last_completed_stage: i32,
+    pub created_on: u128,
 }
 
 pub struct Job {
@@ -35,6 +36,7 @@ pub struct Job {
     progress_path: PathBuf,
     diag_output_path: PathBuf,
     mmb_process: Option<Child>,
+    created_on: std::time::SystemTime,
 }
 
 fn get_stage_num(path: &PathBuf, file_name: &str) -> i32 {
@@ -188,6 +190,7 @@ impl Job {
             progress_path,
             diag_output_path,
             mmb_process: None,
+            created_on: std::time::SystemTime::now(),
         })
     }
 
@@ -207,6 +210,10 @@ impl Job {
                     total_steps,
                     last_available_stage: self.last_available_stage(),
                     last_completed_stage: self.last_completed_stage(),
+                    created_on: match self.created_on.duration_since(std::time::UNIX_EPOCH) {
+                        Ok(d) => d.as_millis(),
+                        Err(_) => 0
+                    },
                 };
                 if proc_state == mmb::State::Running {
                     // MMB reports the job has finished but the MMB process is still running
@@ -228,6 +235,7 @@ impl Job {
                     total_steps: 0,
                     last_available_stage: self.last_available_stage(),
                     last_completed_stage: self.last_completed_stage(),
+                    created_on: 0,
                 })
             },
         }

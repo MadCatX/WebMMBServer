@@ -9,6 +9,19 @@ use crate::session::session::Session;
 use crate::server::api;
 use crate::server::api::ApiResponse;
 
+fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
+    api::JobInfo{
+        id: session::uuid_to_str(id),
+        name: info.name,
+        state: mmb_state_to_job_state(info.state),
+        step: step_to_str(info.step),
+        total_steps: info.total_steps,
+        last_available_stage: info.last_available_stage,
+        last_completed_stage: info.last_completed_stage,
+        created_on: info.created_on.to_string(),
+    }
+}
+
 fn handle_simple_rq_data(data: serde_json::Value) -> Result<Uuid, String> {
     let parsed: serde_json::Result<api::SimpleJobRqData> = serde_json::from_value(data);
     if parsed.is_err() {
@@ -62,15 +75,7 @@ pub fn list_jobs(session: Arc<Session>) -> ApiResponse {
             Ok(info) => {
                 let item = api::JobListItem{
                     ok: true,
-                    info: api::JobInfo{
-                        id: session::uuid_to_str(&id),
-                        name: info.name,
-                        state: mmb_state_to_job_state(info.state),
-                        step: step_to_str(info.step),
-                        total_steps: info.total_steps,
-                        last_available_stage: info.last_available_stage,
-                        last_completed_stage: info.last_completed_stage,
-                    }
+                    info: job_info_to_api(&id, info),
                 };
                 jobs.push(item);
             },
@@ -86,6 +91,7 @@ pub fn list_jobs(session: Arc<Session>) -> ApiResponse {
                         total_steps: 0,
                         last_available_stage: 0,
                         last_completed_stage: 0,
+                        created_on: 0.to_string(),
                     }
                 };
                 jobs.push(item);
@@ -118,15 +124,7 @@ pub fn job_status(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
         Some(info) => {
             match info {
                 Ok(info) => {
-                    let resp = api::JobInfo{
-                        id: session::uuid_to_str(&id),
-                        name: info.name,
-                        state: mmb_state_to_job_state(info.state),
-                        step: step_to_str(info.step),
-                        total_steps: info.total_steps,
-                        last_available_stage: info.last_available_stage,
-                        last_completed_stage: info.last_completed_stage,
-                    };
+                    let resp = job_info_to_api(&id, info);
                     ApiResponse::ok(serde_json::to_value(resp).unwrap())
                 },
                 Err(e) => ApiResponse::fail(Status::InternalServerError, e),
@@ -171,15 +169,7 @@ pub fn resume_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
 
     match session.resume_job(&id, res_data.commands) {
         Ok(info) => { 
-            let data = api::JobInfo{
-                id: session::uuid_to_str(&id),
-                name: info.name,
-                state: mmb_state_to_job_state(info.state),
-                step: step_to_str(info.step),
-                total_steps: info.total_steps,
-                last_available_stage: info.last_available_stage,
-                last_completed_stage: info.last_completed_stage,
-            };
+            let data = job_info_to_api(&id, info);
             ApiResponse::ok(serde_json::to_value(data).unwrap())
         },
         Err(e) => ApiResponse::fail(Status::BadRequest, e),
@@ -203,16 +193,8 @@ pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
     let start_data = parsed.unwrap();
     match session.add_job(start_data.name, start_data.commands) {
         Ok((id, info)) => { 
-            let data = api::JobInfo{
-                id: session::uuid_to_str(&id),
-                name: info.name,
-                state: mmb_state_to_job_state(info.state),
-                step: step_to_str(info.step),
-                total_steps: info.total_steps,
-                last_available_stage: info.last_available_stage,
-                last_completed_stage: info.last_completed_stage,
-            };
-            ApiResponse::ok(serde_json::to_value(data).unwrap())
+            let resp = job_info_to_api(&id, info);
+            ApiResponse::ok(serde_json::to_value(resp).unwrap())
         },
         Err(e) => ApiResponse::fail(Status::BadRequest, e),
     }
@@ -230,15 +212,7 @@ pub fn stop_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
                 Some(info) => {
                     match info {
                         Ok(info) => {
-                            let resp = api::JobInfo{
-                                id: session::uuid_to_str(&id),
-                                name: info.name,
-                                state: mmb_state_to_job_state(info.state),
-                                step: step_to_str(info.step),
-                                total_steps: info.total_steps,
-                                last_available_stage: info.last_available_stage,
-                                last_completed_stage: info.last_completed_stage,
-                            };
+                            let resp = job_info_to_api(&id, info);
                             ApiResponse::ok(serde_json::to_value(resp).unwrap())
                         },
                         Err(e) => ApiResponse::fail(Status::InternalServerError, e),
