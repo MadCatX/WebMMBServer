@@ -359,7 +359,10 @@ impl Job {
 
 impl Drop for Job {
     fn drop(&mut self) {
-        assert!(self.info().unwrap().state != mmb::State::Running);
+        match self.mmb_process.as_mut() {
+            Some(p) => assert!(p.try_wait().is_ok()),
+            None => {},
+        };
 
         std::fs::remove_dir_all(&self.job_dir);
         println!("Job dropped");
