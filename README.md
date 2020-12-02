@@ -18,6 +18,7 @@ Compile the project with the following command:
 By default, project will be built in `target/release` subdirectory as `web_mmb_server` executable.
 
 ## Configuration
+
 ___NOTE: This is a temporary solution and will change in the future___
 
 WebMMBServer needs a configuration file to launch. A `cfg.json` file needs to be present in the directory WebMMBServer is launched from. The configuration file has a standard JSON file structure, the individual values are described below.
@@ -27,6 +28,7 @@ WebMMBServer needs a configuration file to launch. A `cfg.json` file needs to be
 * `jobs_dir`: Directory where WebMMBServer will store MMB job data
 * `root_dir`: Directory with the WebMMB web application data
 * `port`: Port on which the WebMMBServer will listen
+* `domain`: Internet domain name on which the server is running
 
 Example
 
@@ -35,5 +37,6 @@ Example
         "mmb_parameters_path": "/opt/share/MMB/parameters.csv",
         "jobs_dir": "/tmp/webmmbsrv",
         "root_dir": "/opt/www/WebMMB",
-        "port": 8000
+        "port": 8000,
+        "domain": "localhost"
     }
