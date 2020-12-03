@@ -289,12 +289,13 @@ impl Job {
             Err(e) => return Err(e),
         }
 
-        // TODO: This is now tailored to the (unneccessary) runner script
-
         let proc = match Command::new(&self.mmb_exec_path)
             .current_dir(&self.job_dir)
+            .arg("-c")
             .arg(&self.cmds_path)
+            .arg("-progress")
             .arg(&self.progress_path)
+            .arg("-output")
             .arg(&self.diag_output_path)
             .spawn() {
                 Ok(proc) => proc,
