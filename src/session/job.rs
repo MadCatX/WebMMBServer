@@ -1,6 +1,7 @@
 use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
 use std::io::Read;
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::thread;
@@ -102,13 +103,22 @@ fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
     }
 
     match proc.as_mut().unwrap().try_wait() {
-        Ok(code) => {
-            match code {
+        Ok(exit) => {
+            match exit {
                 Some(status) => {
-                    if !status.success() {
-                        return Ok(mmb::State::Failed);
+                    if status.success() {
+                        return Ok(mmb::State::Finished)
+                    } else {
+                        match status.signal() {
+                            Some(code) => {
+                                match code {
+                                    15 => Ok(mmb::State::Finished), // Terminated on SIGTERM
+                                    _ => Ok(mmb::State::Failed)
+                                }
+                            },
+                            None => Err(String::from("Process has finished but return code was not available")),
+                        }
                     }
-                    Ok(mmb::State::Finished)
                 },
                 None => Ok(mmb::State::Running)
             }
@@ -221,7 +231,7 @@ impl Job {
                     info.state = mmb::State::Running;
                 } else if info.state == mmb::State::Running &&
                           proc_state != mmb::State::Running {
-                    // MMB reports that the job is running but its process has dies
+                    // MMB reports that the job is running but its process has died
                     // Report this as an error
                     info.state = mmb::State::Failed;
                 }
