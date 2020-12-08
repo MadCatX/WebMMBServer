@@ -1,7 +1,6 @@
 use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
 use std::io::Read;
-use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::thread;
@@ -107,18 +106,9 @@ fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
             match exit {
                 Some(status) => {
                     if status.success() {
-                        return Ok(mmb::State::Finished)
-                    } else {
-                        match status.signal() {
-                            Some(code) => {
-                                match code {
-                                    15 => Ok(mmb::State::Finished), // Terminated on SIGTERM
-                                    _ => Ok(mmb::State::Failed)
-                                }
-                            },
-                            None => Err(String::from("Process has finished but return code was not available")),
-                        }
+                        return Ok(mmb::State::Finished);
                     }
+                    return Ok(mmb::State::Finished);
                 },
                 None => Ok(mmb::State::Running)
             }
@@ -346,11 +336,18 @@ impl Job {
         let terminated = || -> bool {
             let mut attempts = 0;
             while attempts < 10 {
-                if self.mmb_process.as_mut().unwrap().try_wait().is_ok() {
-                    return true;
-                }
-                attempts += 1;
-                thread::sleep(Duration::from_micros(100));
+                match self.mmb_process.as_mut().unwrap().try_wait() {
+                    Ok(ret) => match ret {
+                        Some(_) => return true,
+                        None => {
+                            attempts += 1;
+                        },
+                    },
+                    Err(e) => {
+                        return false;
+                    }
+                };
+                thread::sleep(Duration::from_millis(1000));
             }
             false
         }();
