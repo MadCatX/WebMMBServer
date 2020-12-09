@@ -1,17 +1,19 @@
-use rocket::http::{Cookie, Cookies};
+use rocket::http::{Cookie, Cookies, SameSite};
 use uuid::Uuid;
 
-const AuthName: &'static str = "auth";
+const AUTH_NAME: &'static str = "auth";
 
 pub fn make_auth_cookie(domain: String, session_id: String) -> Cookie<'static> {
-    Cookie::build(AuthName, session_id)
+    Cookie::build(AUTH_NAME, session_id)
         .domain(domain)
         .path("/")
+        .same_site(SameSite::Strict)
+        .secure(true)
         .finish()
 }
 
 pub fn get_session_id(cookies: &mut Cookies) -> Option<Uuid> {
-    match cookies.get_private(AuthName) {
+    match cookies.get_private(AUTH_NAME) {
         Some(c) => {
             match Uuid::parse_str(c.value()) {
                 Ok(id) => Some(id),
@@ -23,5 +25,5 @@ pub fn get_session_id(cookies: &mut Cookies) -> Option<Uuid> {
 }
 
 pub fn remove_session_cookie(cookies: &mut Cookies) {
-    cookies.remove_private(Cookie::named(AuthName));
+    cookies.remove_private(Cookie::named(AUTH_NAME));
 }
