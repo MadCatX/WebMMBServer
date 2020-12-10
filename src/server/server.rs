@@ -2,11 +2,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use rocket::http::{Cookies, Status}; //FIXME: CookieJar???
 use rocket::{get, post, routes, State};
-use rocket::outcome::IntoOutcome;
+use rocket::Outcome::{Forward, Success};
 use rocket::request::{self, FromRequest};
 use rocket::Request;
 use rocket::response::{NamedFile, Redirect};
 use rocket::uri;
+use uuid::Uuid;
 
 use crate::config::Config;
 use crate::session;
@@ -26,22 +27,35 @@ struct AppState {
 #[derive(Debug)]
 struct SessionId(String);
 
-fn check_str_is_uuid(s: String) -> Option<String> {
+fn check_str_is_uuid(s: String) -> Option<Uuid> {
     match session::str_to_uuid(s.as_str()) {
-        Ok(_) => Some(s),
+        Ok(uuid) => Some(uuid),
         Err(_) => None,
     }
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for SessionId {
-    type Error = std::convert::Infallible;
+    type Error = ();
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<SessionId, Self::Error> {
-        request.cookies()
+        let state = request.guard::<State<AppState>>()?;
+
+        match request.cookies()
             .get_private(session_cookie::AUTH_NAME)
-            .and_then(|c| check_str_is_uuid(String::from(c.value())))
-            .map(|session_id| SessionId(session_id))
-            .or_forward(())
+            .and_then(|c| check_str_is_uuid(String::from(c.value()))) {
+            Some(uuid) => {
+                match state.sm.write().unwrap().get_session(&uuid) {
+                    Some(session) => {
+                        if session.is_logged_in() {
+                            return Success(SessionId(session::uuid_to_str(&uuid)));
+                        }
+                        Forward(())
+                    },
+                    None => Forward(()),
+                }
+            }
+            None => Forward(()),
+        }
     }
 }
 
