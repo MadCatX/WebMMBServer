@@ -38,7 +38,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for SessionId {
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<SessionId, Self::Error> {
         request.cookies()
-            .get_private("auth")
+            .get_private(session_cookie::AUTH_NAME)
             .and_then(|c| check_str_is_uuid(String::from(c.value())))
             .map(|session_id| SessionId(session_id))
             .or_forward(())

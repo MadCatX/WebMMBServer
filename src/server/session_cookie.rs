@@ -1,11 +1,18 @@
+extern crate time;
+
+use std::ops::Add;
 use rocket::http::{Cookie, Cookies, SameSite};
 use uuid::Uuid;
 
-const AUTH_NAME: &'static str = "auth";
+pub const AUTH_NAME: &'static str = "webmmb_auth";
 
 pub fn make_auth_cookie(domain: String, session_id: String) -> Cookie<'static> {
+    let now = time::now();
+    let expire_on = now.add(time::Duration::days(1));
+
     Cookie::build(AUTH_NAME, session_id)
         .domain(domain)
+        .expires(expire_on)
         .path("/")
         .same_site(SameSite::Strict)
         .secure(true)
