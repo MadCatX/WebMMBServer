@@ -21,15 +21,14 @@ pub struct JobInfo {
     pub name: String,
     pub state: mmb::State,
     pub step: i32,
-    pub total_steps: i32, 
-    pub last_available_stage: i32,
-    pub last_completed_stage: i32,
+    pub total_steps: i32,
+    pub available_stages: Vec<i32>,
     pub created_on: u128,
 }
 
 pub struct Job {
     pub name: String,
-    commands: serde_json::Value,
+    commands: Option<serde_json::Value>,
     job_dir: PathBuf,
     cmds_path: PathBuf,
     mmb_exec_path: PathBuf,
@@ -39,14 +38,73 @@ pub struct Job {
     created_on: std::time::SystemTime,
 }
 
-fn get_stage_num(path: &PathBuf, file_name: &str) -> i32 {
+fn clear_stages(path: &PathBuf, stage: i32) -> Result<(), String> {
+    let dir_lister = match std::fs::read_dir(path) {
+        Ok(v) => v,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    let traj_prefix = format!("{}.", TRAJECTORY_FILE_PREFIX);
+    let last_prefix = format!("{}.", LAST_FRAME_FILE_PREFIX);
+    for entry in dir_lister {
+        if entry.is_err() {
+            continue;
+        }
+
+        let p = entry.unwrap().path();
+        if !p.is_file() {
+            continue;
+        }
+
+        match p.extension() {
+            Some(extn) => {
+                if extn != "pdb" {
+                    continue;
+                }
+            },
+            None => continue,
+        }
+
+        let name = match p.file_stem() {
+            Some(stem) => {
+                match stem.to_str() {
+                    Some(name) => name,
+                    None => continue,
+                }
+            },
+            None => continue,
+        };
+
+        if !(name.starts_with(traj_prefix.as_str()) || name.starts_with(last_prefix.as_str())) {
+            continue;
+        }
+
+        let segs = name.split(".").collect::<Vec<&str>>();
+        if segs.len() != 2 {
+            continue;
+        }
+
+        let n = match segs.get(1).unwrap().parse::<i32>() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+
+        if n >= stage {
+            std::fs::remove_file(p);
+        }
+    }
+
+    Ok(())
+}
+
+fn get_stages(path: &PathBuf, file_name: &str) -> Vec<i32> {
+    let mut stages: Vec<i32> = Vec::new();
     let dir_lister = std::fs::read_dir(path);
     if dir_lister.is_err() {
-        return 0;
+        return stages;
     }
 
     let name_prefix = format!("{}.", file_name);
-    let mut stage_num = 0;
     for entry in dir_lister.unwrap() {
         if entry.is_err() {
             continue;
@@ -84,16 +142,15 @@ fn get_stage_num(path: &PathBuf, file_name: &str) -> i32 {
 
             match segs.get(1).unwrap().parse::<i32>() {
                 Ok(n) => {
-                    if n > stage_num {
-                        stage_num = n;
-                    }
+                    stages.push(n);
                 }
-                Err(_) => {},
+                Err(_) => (),
             }
         }
     }
 
-    stage_num
+    stages.sort_unstable();
+    stages
 }
 
 fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
@@ -167,11 +224,11 @@ fn read_mmb_progress(path: &PathBuf) -> Result<(mmb::State, i32, i32), String> {
 }
 
 impl Job {
-    pub fn commands(&self) -> serde_json::Value {
+    pub fn commands(&self) -> Option<serde_json::Value> {
         self.commands.clone()
     }
 
-    pub fn create(name: String, commands: serde_json::Value, mmb_exec_path: PathBuf, job_dir: PathBuf) -> Result<Job, String> {
+    pub fn create(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf) -> Result<Job, String> {
         let mut cmds_path = PathBuf::new();
         cmds_path.push(&job_dir); cmds_path.push(CMDS_FILE_NAME);
 
@@ -183,7 +240,7 @@ impl Job {
 
         Ok(Job{
             name,
-            commands,
+            commands: None,
             job_dir,
             cmds_path,
             mmb_exec_path,
@@ -208,8 +265,7 @@ impl Job {
                     state,
                     step,
                     total_steps,
-                    last_available_stage: self.last_available_stage(),
-                    last_completed_stage: self.last_completed_stage(),
+                    available_stages: self.available_stages(),
                     created_on: match self.created_on.duration_since(std::time::UNIX_EPOCH) {
                         Ok(d) => d.as_millis(),
                         Err(_) => 0
@@ -233,34 +289,25 @@ impl Job {
                     state: proc_state,
                     step: 0,
                     total_steps: 0,
-                    last_available_stage: self.last_available_stage(),
-                    last_completed_stage: self.last_completed_stage(),
+                    available_stages: self.available_stages(),
                     created_on: 0,
                 })
             },
         }
     }
 
-    pub fn last_available_stage(&self) -> i32 {
-        get_stage_num(&self.job_dir, TRAJECTORY_FILE_PREFIX)
+    pub fn available_stages(&self) -> Vec<i32> {
+        get_stages(&self.job_dir, TRAJECTORY_FILE_PREFIX)
     }
 
-    pub fn last_completed_stage(&self) -> i32 {
-        get_stage_num(&self.job_dir, LAST_FRAME_FILE_PREFIX)
-    }
-
-    pub fn resume(&mut self, commands: serde_json::Value) -> Result<Option<JobInfo>, String> {
-        self.commands = commands;
-        match self.start() {
-            Ok(_) => match self.info() {
-                Ok(info) => Ok(Some(info)),
-                Err(_) => Ok(None),
-            },
-            Err(e) => Err(e),
+    pub fn last_available_stage(&self) -> Option<i32> {
+        match get_stages(&self.job_dir, TRAJECTORY_FILE_PREFIX).last() {
+            Some(v) => Some(*v),
+            None => None
         }
     }
 
-    pub fn start(&mut self) -> Result<(), String> {
+    pub fn start(&mut self, commands: serde_json::Value) -> Result<(), String> {
         if self.diag_output_path.exists() {
             match std::fs::remove_file(&self.diag_output_path) {
                 Ok(_) => {},
@@ -268,24 +315,33 @@ impl Job {
             }
         }
 
-        let mapped = match mmb::commands::json_to_mapped(&self.commands) {
+        self.commands = Some(commands);
+
+        let mapped = match mmb::commands::json_to_mapped(self.commands.as_ref().unwrap()) {
             Ok(v) => v,
             Err(e) => return Err(e.to_string()),
         };
 
-        let stages = mmb::commands::stages(&mapped);
-        if stages.is_none() {
-            return Err(String::from("Cannot determine stages"));
+        let stages = match mmb::commands::stages(&mapped) {
+            Some(s) => s,
+            None => return Err(String::from("Cannot determine stages")),
+        };
+        if stages.first != stages.last {
+            return Err(String::from("Calculation spanning over multiple stages is not supported"));
         }
-        let first_stage = stages.unwrap().first;
 
-        match mmb::commands::write(&self.cmds_path, &mapped, first_stage) {
-            Ok(_) => {},
+        match mmb::commands::write(&self.cmds_path, &mapped, stages.first) {
+            Ok(_) => (),
             Err(e) => return Err(e.to_string()),
         };
 
-        match prepare_kickoff_file(&self.job_dir, first_stage) {
-            Ok(_) => {},
+        match clear_stages(&self.job_dir, stages.first) {
+            Ok(()) => (),
+            Err(e) => return Err(e),
+        };
+
+        match prepare_kickoff_file(&self.job_dir, stages.first) {
+            Ok(_) => (),
             Err(e) => return Err(e),
         }
 

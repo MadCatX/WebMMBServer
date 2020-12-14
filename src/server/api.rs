@@ -14,7 +14,6 @@ pub struct ApiRequestData {
 pub enum ApiRequest {
     StartJob(ApiRequestData),
     StopJob(ApiRequestData),
-    ResumeJob(ApiRequestData),
     DeleteJob(ApiRequestData),
     JobStatus(ApiRequestData),
     ListJobs(ApiRequestData),
@@ -96,8 +95,7 @@ pub struct JobInfo {
     pub state: JobState,
     pub step: String,
     pub total_steps: i32,
-    pub last_available_stage: i32,
-    pub last_completed_stage: i32,
+    pub available_stages: Vec<i32>,
     pub created_on: String,
 }
 

@@ -9,6 +9,18 @@ use crate::session::session::Session;
 use crate::server::api;
 use crate::server::api::ApiResponse;
 
+fn empty_job_info() -> api::JobInfo {
+    api::JobInfo{
+        id: String::new(),
+        name: String::new(),
+        state: api::JobState::NotStarted,
+        step: step_to_str(0),
+        total_steps: 0,
+        available_stages: Vec::new(),
+        created_on: 0.to_string(),
+    }
+}
+
 fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
     api::JobInfo{
         id: session::uuid_to_str(id),
@@ -16,8 +28,7 @@ fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
         state: mmb_state_to_job_state(info.state),
         step: step_to_str(info.step),
         total_steps: info.total_steps,
-        last_available_stage: info.last_available_stage,
-        last_completed_stage: info.last_completed_stage,
+        available_stages: info.available_stages,
         created_on: info.created_on.to_string(),
     }
 }
@@ -80,19 +91,9 @@ pub fn list_jobs(session: Arc<Session>) -> ApiResponse {
                 jobs.push(item);
             },
             Err(_) => {
-                let empty = String::new();
                 let item = api::JobListItem{
                     ok: false,
-                    info: api::JobInfo{
-                        id: empty.clone(),
-                        name: empty.clone(),
-                        state: api::JobState::NotStarted,
-                        step: empty.clone(),
-                        total_steps: 0,
-                        last_available_stage: 0,
-                        last_completed_stage: 0,
-                        created_on: 0.to_string(),
-                    }
+                    info: empty_job_info(),
                 };
                 jobs.push(item);
             },
@@ -118,7 +119,7 @@ pub fn job_status(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
     let id = match handle_simple_rq_data(data) {
         Ok(id) => id,
         Err(e) => return ApiResponse::fail(Status::BadRequest, e),
-    };   
+    };
 
     match session.job_info(id) {
         Some(info) => {
@@ -149,33 +150,6 @@ pub fn mmb_output(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
     }
 }
 
-pub fn resume_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
-    println!("resume_job handler");
-    let parsed: serde_json::Result<api::ResumeJobRqData> = serde_json::from_value(data);
-    if parsed.is_err() {
-        return ApiResponse::fail(Status::BadRequest, String::from("Invalid start job request"));
-    }
-
-    let res_data = parsed.unwrap();
-
-    let id = match Uuid::parse_str(res_data.id.as_str()) {
-        Ok(id) => id,
-        Err(_) => return ApiResponse::fail(Status::BadRequest, String::from("Invalid job ID")),
-    };
-
-    if !session.has_job(&id) {
-        return ApiResponse::fail(Status::BadRequest, String::from("No job to continue"));
-    }
-
-    match session.resume_job(&id, res_data.commands) {
-        Ok(info) => { 
-            let data = job_info_to_api(&id, info);
-            ApiResponse::ok(serde_json::to_value(data).unwrap())
-        },
-        Err(e) => ApiResponse::fail(Status::BadRequest, e),
-    }
-}
-
 pub fn session_info(session: Arc<Session>) -> ApiResponse {
     let id = session::uuid_to_str(&session.id());
 
@@ -191,8 +165,8 @@ pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
     }
 
     let start_data = parsed.unwrap();
-    match session.add_job(start_data.name, start_data.commands) {
-        Ok((id, info)) => { 
+    match session.start_job(start_data.name, start_data.commands) {
+        Ok((id, info)) => {
             let resp = job_info_to_api(&id, info);
             ApiResponse::ok(serde_json::to_value(resp).unwrap())
         },

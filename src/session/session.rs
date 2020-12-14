@@ -51,7 +51,6 @@ impl Session {
                         SessionData {
                             jobs: HashMap::new(),
                             is_logged_in,
-                        
                         }
                     ),
                     id,
@@ -64,51 +63,25 @@ impl Session {
         }
     }
 
-    pub fn add_job(&self, name: String, commands: serde_json::Value) -> Result<(Uuid, job::JobInfo), String> {
-        let mut data = self.data.write().unwrap();
-        for (_, job) in &data.jobs {
-            if job.name == name {
-                return Err(String::from("Job with the same name already exists in this session"));
-            }
-        }
-
+    fn add_job(&self, name: String) -> Result<Uuid, String> {
         let id = Uuid::new_v4();
 
         match prepare_job_dir(&self.jobs_dir, &id, &self.mmb_parameters_path) {
             Ok(job_dir) => {
-                let mut job = match job::Job::create(
+                match job::Job::create(
                     name,
-                    commands,
                     self.mmb_exec_path.clone(),
                     job_dir
                 ) {
-                    Ok(job) => job,
-                    Err(e) => return Err(e)
-                };
-
-                match job.start() {
-                    Ok(_) => {
-                        let info = match job.info() {
-                            Ok(info) => info,
-                            Err(_) => {
-                                job::JobInfo{
-                                    name: job.name.clone(),
-                                    state: mmb::State::Running,
-                                    step: 0,
-                                    total_steps: 0,
-                                    last_available_stage: 0,
-                                    last_completed_stage: 0,
-                                    created_on: 0,
-                                }
-                            }
-                        };
+                    Ok(job) => {
+                        let mut data = self.data.write().unwrap();
                         data.jobs.insert(id, job);
-                        Ok((id, info))
+                        Ok(id)
                     },
                     Err(e) => Err(e),
                 }
             },
-            Err(e) => Err(e),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -138,6 +111,17 @@ impl Session {
         self.data.read().unwrap().jobs.contains_key(id)
     }
 
+    pub fn has_job_by_name(&self, name: &String) -> bool {
+        let data = self.data.read().unwrap();
+        for (_, job) in &data.jobs {
+            if job.name == *name {
+                return true;
+            }
+
+        }
+        return false;
+    }
+
     pub fn id(&self) -> Uuid {
         self.id.clone()
     }
@@ -146,6 +130,15 @@ impl Session {
         let data = self.data.read().unwrap();
 
         data.is_logged_in
+    }
+
+    pub fn job_name_to_id(&self, name: &String) -> Option<Uuid> {
+        for (id, job) in &self.data.read().unwrap().jobs {
+            if job.name == *name {
+                return Some(*id);
+            }
+        }
+        None
     }
 
     pub fn list_jobs(&self) -> Vec<(Uuid, Result<job::JobInfo, String>)> {
@@ -163,7 +156,7 @@ impl Session {
         let data = self.data.read().unwrap();
 
         match data.jobs.get(&id) {
-            Some(job) => Some(job.commands()),
+            Some(job) => job.commands(),
             None => None,
         }
     }
@@ -181,17 +174,8 @@ impl Session {
         let data = self.data.read().unwrap();
 
         match data.jobs.get(&id) {
-            Some(job) => Some(job.last_available_stage()),
-            None => None
-        }
-    }
-
-    pub fn job_last_completed_stage(&self, id: &Uuid) -> Option<i32> {
-        let data = self.data.read().unwrap();
-
-        match data.jobs.get(&id) {
-            Some(job) => Some(job.last_completed_stage()),
-            None => None
+            Some(job) => job.last_available_stage(),
+            None => None,
         }
     }
 
@@ -204,39 +188,38 @@ impl Session {
         }
     }
 
-    pub fn resume_job(&self, id: &Uuid, commands: serde_json::Value) -> Result<job::JobInfo, String> {
-        let mut data = self.data.write().unwrap();
-
-        match data.jobs.get_mut(&id) {
-            Some(job) => {
-                match job.resume(commands) {
-                    Ok(info) => {
-                        match info {
-                            Some(info) => Ok(info),
-                            None => {
-                                Ok(job::JobInfo{
-                                    name: job.name.clone(),
-                                    state: mmb::State::Running,
-                                    step: 0,
-                                    total_steps: 0,
-                                    last_available_stage: 0,
-                                    last_completed_stage: 0,
-                                    created_on: 0,
-                                })
-                            },
-                        }
-                    },
-                    Err(e) => Err(e),
-                }
-            },
-            None => Err(String::from("No job to continue")),
-        }
-    }
-
     pub fn set_login_state(&self, login_state: bool) {
         let mut data = self.data.write().unwrap();
 
         data.is_logged_in = login_state;
+    }
+
+    pub fn start_job(&self, name: String, commands: serde_json::Value) -> Result<(Uuid, job::JobInfo), String> {
+        let ret = if !self.has_job_by_name(&name) {
+            self.add_job(name)
+        } else {
+            match self.job_name_to_id(&name) {
+                Some(id) => Ok(id),
+                None => Err(String::from("No such job")),
+            }
+        };
+
+        let id = match ret {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+
+        let mut data = self.data.write().unwrap();
+        let job = data.jobs.get_mut(&id).unwrap();
+        match job.start(commands) {
+            Ok(()) => {
+                match job.info() {
+                    Ok(info) => Ok((id, info)),
+                    Err(e) => Err(e),
+                }
+            },
+            Err(e) => Err(e),
+        }
     }
 
     pub fn stop_job(&self, id: Uuid) -> Result<job::JobInfo, String> {
