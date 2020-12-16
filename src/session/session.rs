@@ -85,6 +85,49 @@ impl Session {
         }
     }
 
+    pub fn clone_job(&self, name: String, src_id: &Uuid) -> Result<Uuid, String> {
+        if name.len() < 1 {
+            return Err(String::from("Job must have a name"));
+        }
+        if self.has_job_by_name(&name) {
+            return Err(String::from("Job with such name already exists"));
+        }
+
+        let id = Uuid::new_v4();
+        let mut data = self.data.write().unwrap();
+        let src_job = match data.jobs.get_mut(src_id) {
+            Some(v) => v,
+            None => return Err(String::from("No job to clone")),
+        };
+
+        match src_job.info() {
+            Ok(info) => {
+                if info.state == mmb::State::Running {
+                    return Err(String::from("Running jobs cannot be cloned"));
+                }
+            },
+            Err(e) => return Err(e),
+        };
+
+        match prepare_job_dir(&self.jobs_dir, &id, &self.mmb_parameters_path) {
+            Ok(job_dir) => {
+                match job::Job::clone(
+                    name,
+                    self.mmb_exec_path.clone(),
+                    job_dir,
+                    &src_job
+                ) {
+                    Ok(job) => {
+                        data.jobs.insert(id, job);
+                        Ok(id)
+                    },
+                    Err(e) => Err(e),
+                }
+            },
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     pub fn delete_job(&self, id: &Uuid) -> bool {
         let mut job = {
             let mut data = self.data.write().unwrap();
@@ -180,9 +223,9 @@ impl Session {
     }
 
     pub fn job_stdout(&self, id: &Uuid) -> Option<Result<String, String>> {
-        let data = self.data.read().unwrap();
+        let mut data = self.data.write().unwrap();
 
-        match data.jobs.get(&id) {
+        match data.jobs.get_mut(&id) {
             Some(job) => Some(job.stdout()),
             None => None
         }

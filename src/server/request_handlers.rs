@@ -63,6 +63,31 @@ fn step_to_str(step: i32) -> String {
     step.to_string()
 }
 
+pub fn clone_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let parsed = match serde_json::from_value::<api::CloneJobRqData>(data) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+    };
+    let src_id = match Uuid::parse_str(&parsed.id) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+    };
+
+    let id = match session.clone_job(parsed.name, &src_id) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::InternalServerError, e),
+    };
+
+    let info = session.job_info(id).unwrap();
+    match info {
+        Ok(info) => {
+            let resp = job_info_to_api(&id, info);
+            ApiResponse::ok(serde_json::to_value(resp).unwrap())
+        },
+        Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+    }
+}
+
 pub fn delete_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
     let id = match handle_simple_rq_data(data) {
         Ok(id) => id,

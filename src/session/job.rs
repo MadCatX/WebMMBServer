@@ -38,6 +38,27 @@ pub struct Job {
     created_on: std::time::SystemTime,
 }
 
+fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
+    if proc.is_none() {
+        return Ok(mmb::State::Unknown);
+    }
+
+    match proc.as_mut().unwrap().try_wait() {
+        Ok(exit) => {
+            match exit {
+                Some(status) => {
+                    if status.success() {
+                        return Ok(mmb::State::Finished);
+                    }
+                    return Ok(mmb::State::Failed);
+                },
+                None => Ok(mmb::State::Running)
+            }
+        },
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 fn clear_stages(path: &PathBuf, stage: i32) -> Result<(), String> {
     let dir_lister = match std::fs::read_dir(path) {
         Ok(v) => v,
@@ -91,6 +112,46 @@ fn clear_stages(path: &PathBuf, stage: i32) -> Result<(), String> {
 
         if n >= stage {
             std::fs::remove_file(p);
+        }
+    }
+
+    Ok(())
+}
+
+fn copy_job_dir(tgt: &PathBuf, src: &PathBuf) -> Result<(), String> {
+    let dir_lister = match std::fs::read_dir(src) {
+        Ok(v) => v,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    for entry in dir_lister {
+        let e = match entry {
+            Ok(v) => v,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let path = e.path();
+
+        if path.is_dir() {
+            continue;
+        }
+
+        let name = match path.file_name() {
+            Some(v) => v,
+            None => return Err(String::from("No file name")),
+        };
+
+        if name == PGRS_FILE_NAME ||
+           name == DOUT_FILE_NAME {
+            continue;
+        }
+
+        let mut tgt_file = tgt.clone();
+        tgt_file.push(name);
+
+        match std::fs::copy(e.path(), tgt_file) {
+            Ok(_) => (),
+            Err(e) => return Err(e.to_string()),
         }
     }
 
@@ -153,27 +214,6 @@ fn get_stages(path: &PathBuf, file_name: &str) -> Vec<i32> {
     stages
 }
 
-fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
-    if proc.is_none() {
-        return Ok(mmb::State::Unknown);
-    }
-
-    match proc.as_mut().unwrap().try_wait() {
-        Ok(exit) => {
-            match exit {
-                Some(status) => {
-                    if status.success() {
-                        return Ok(mmb::State::Finished);
-                    }
-                    return Ok(mmb::State::Finished);
-                },
-                None => Ok(mmb::State::Running)
-            }
-        },
-        Err(e) => Err(e.to_string()),
-    }
-}
-
 fn prepare_kickoff_file(path: &PathBuf, stage: i32) -> Result<(), String> {
     if stage < 2 {
         return Ok(());
@@ -224,6 +264,38 @@ fn read_mmb_progress(path: &PathBuf) -> Result<(mmb::State, i32, i32), String> {
 }
 
 impl Job {
+    pub fn available_stages(&self) -> Vec<i32> {
+        get_stages(&self.job_dir, TRAJECTORY_FILE_PREFIX)
+    }
+
+    pub fn clone(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, src: &Job) -> Result<Job, String> {
+        match copy_job_dir(&job_dir, &src.job_dir) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        };
+
+        let mut cmds_path = PathBuf::new();
+        cmds_path.push(&job_dir); cmds_path.push(CMDS_FILE_NAME);
+
+        let mut progress_path = PathBuf::new();
+        progress_path.push(&job_dir); progress_path.push(PGRS_FILE_NAME);
+
+        let mut diag_output_path = PathBuf::new();
+        diag_output_path.push(&job_dir); diag_output_path.push(DOUT_FILE_NAME);
+
+        Ok(Job{
+            name,
+            commands: src.commands.clone(),
+            job_dir,
+            cmds_path,
+            mmb_exec_path,
+            progress_path,
+            diag_output_path,
+            mmb_process: None,
+            created_on: std::time::SystemTime::now(),
+        })
+    }
+
     pub fn commands(&self) -> Option<serde_json::Value> {
         self.commands.clone()
     }
@@ -252,11 +324,24 @@ impl Job {
     }
 
     pub fn info(&mut self) -> Result<JobInfo, String> {
-        let proc_state = check_process(&mut self.mmb_process)?;
+        let state = self.state()?;
 
-        if proc_state == mmb::State::Unknown {
-            return Err(String::from("Unknown job state"));
-        }
+        match state {
+            mmb::State::NotStarted =>
+                return Ok(JobInfo{
+                    name: self.name.clone(),
+                    state: mmb::State::NotStarted,
+                    step: 0,
+                    total_steps: 0,
+                    available_stages: self.available_stages(),
+                    created_on: match self.created_on.duration_since(std::time::UNIX_EPOCH) {
+                        Ok(d) => d.as_millis(),
+                        Err(_) => 0
+                    },
+                }),
+            mmb::State::Unknown => return Err(String::from("Unknown job state")),
+            _ => (),
+        };
 
         match read_mmb_progress(&self.progress_path) {
             Ok((state, step, total_steps)) => {
@@ -271,12 +356,12 @@ impl Job {
                         Err(_) => 0
                     },
                 };
-                if proc_state == mmb::State::Running {
+                if state == mmb::State::Running {
                     // MMB reports the job has finished but the MMB process is still running
                     // Wait until the MMB process actually terminates
                     info.state = mmb::State::Running;
                 } else if info.state == mmb::State::Running &&
-                          proc_state != mmb::State::Running {
+                          state != mmb::State::Running {
                     // MMB reports that the job is running but its process has died
                     // Report this as an error
                     info.state = mmb::State::Failed;
@@ -286,7 +371,7 @@ impl Job {
             Err(e) => {
                 Ok(JobInfo{
                     name: self.name.clone(),
-                    state: proc_state,
+                    state,
                     step: 0,
                     total_steps: 0,
                     available_stages: self.available_stages(),
@@ -294,10 +379,6 @@ impl Job {
                 })
             },
         }
-    }
-
-    pub fn available_stages(&self) -> Vec<i32> {
-        get_stages(&self.job_dir, TRAJECTORY_FILE_PREFIX)
     }
 
     pub fn last_available_stage(&self) -> Option<i32> {
@@ -347,7 +428,7 @@ impl Job {
 
         let proc = match Command::new(&self.mmb_exec_path)
             .current_dir(&self.job_dir)
-            .arg("-c")
+            .arg("-C")
             .arg(&self.cmds_path)
             .arg("-progress")
             .arg(&self.progress_path)
@@ -363,7 +444,21 @@ impl Job {
         Ok(())
     }
 
-    pub fn stdout(&self) -> Result<String, String> {
+    pub fn state(&mut self) -> Result<mmb::State, String> {
+        let proc_state = check_process(&mut self.mmb_process)?;
+
+        if proc_state == mmb::State::Unknown && !self.progress_path.exists() {
+            return Ok(mmb::State::NotStarted);
+        }
+        Ok(proc_state)
+    }
+
+    pub fn stdout(&mut self) -> Result<String, String> {
+        let state = self.state()?;
+        if state == mmb::State::NotStarted {
+            return Ok(String::new());
+        }
+
         match std::fs::File::open(&self.diag_output_path) {
             Ok(mut fh) => {
                 let mut buf = String::new();

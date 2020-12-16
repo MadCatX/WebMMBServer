@@ -24,6 +24,9 @@ fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Option<String> {
     let mut txt = String::new();
     let mut keyless = String::new();
 
+    txt.push_str(format!("{} {}\n", KEY_FIRST_STAGE, stage).as_str());
+    txt.push_str(format!("{} {}\n", KEY_LAST_STAGE, stage).as_str());
+
     for (k, v) in mapped {
         if IGNORED_KEYS.contains(&k.as_str()) {
             continue;
@@ -44,9 +47,6 @@ fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Option<String> {
             txt.push_str(item.as_str());
         }
     }
-
-    txt.push_str(format!("{} {}\n", KEY_FIRST_STAGE, stage).as_str());
-    txt.push_str(format!("{} {}\n", KEY_LAST_STAGE, stage).as_str());
 
     txt.push_str(keyless.as_str());
     Some(txt)
@@ -92,7 +92,7 @@ pub fn write(path: &PathBuf, mapped: &MappedJson, stage: i32) -> Result<(), Stri
     if parsed.is_none() {
         return Err(String::from("Invalid MMB commands"));
     }
-    
+
     let mut fh = match File::create(path) {
         Ok(f) => f,
         Err(e) => return Err(e.to_string())

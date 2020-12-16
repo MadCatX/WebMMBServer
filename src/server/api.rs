@@ -20,6 +20,7 @@ pub enum ApiRequest {
     JobCommands(ApiRequestData),
     SessionInfo(ApiRequestData),
     MmbOutput(ApiRequestData),
+    CloneJob(ApiRequestData),
 }
 
 #[derive(Deserialize)]
@@ -32,6 +33,12 @@ pub struct AuthRequestData {
 pub enum AuthRequest {
     LogIn(AuthRequestData),
     LogOut(AuthRequestData),
+}
+
+#[derive(Deserialize)]
+pub struct CloneJobRqData {
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Deserialize)]
