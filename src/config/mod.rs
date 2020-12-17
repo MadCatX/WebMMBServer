@@ -36,6 +36,7 @@ pub struct Config {
 
     pub domain: String,
     pub port: u16,
+    pub require_https: bool,
 }
 
 impl Config {

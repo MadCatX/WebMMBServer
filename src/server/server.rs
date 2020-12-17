@@ -22,6 +22,7 @@ struct AppState {
     pub sm: RwLock<SessionManager>,
     pub jobs_dir: PathBuf,
     pub domain: String,
+    pub require_https: bool,
 }
 
 #[derive(Debug)]
@@ -102,30 +103,30 @@ fn auth_page() -> Result<NamedFile, WMSError> {
 }
 
 #[post("/auth", data = "<auth>")]
-fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppState>) -> Result<Redirect, api::AuthFailResponse> {
+fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppState>) -> api::AuthResponse {
     match auth {
         api::AuthRequest::LogIn(data) => {
             if data.session_id == "" {
                 let id = session::new_uuid();
-                let c = session_cookie::make_auth_cookie(state.domain.clone(), session::uuid_to_str(&id));
+                let c = session_cookie::make_auth_cookie(state.domain.clone(), session::uuid_to_str(&id), state.require_https);
                 cookies.add_private(c);
                 match state.sm.write().unwrap().create_session(&id) {
-                    Ok(_) => Ok(Redirect::to(uri!(index_authorized))),
-                    Err(e) => Err(api::AuthFailResponse{status: Status::InternalServerError, reason: e.to_string()}),
+                    Ok(_) => api::AuthResponse{ status: Status::Ok, message: String::new() },
+                    Err(e) => api::AuthResponse{ status: Status::InternalServerError, message: e.to_string() },
                 }
             } else {
                 let id = match session::str_to_uuid(data.session_id.as_str().trim()) {
                     Ok(id) => id,
-                    Err(_) => return Err(api::AuthFailResponse{status: Status::BadRequest, reason: String::from("Invalid session ID")}),
+                    Err(_) => return api::AuthResponse{ status: Status::BadRequest, message: String::from("Invalid session ID") },
                 };
                 match state.sm.write().unwrap().get_session(&id) {
                     Some(session) => {
-                        let c = session_cookie::make_auth_cookie(state.domain.clone(), session::uuid_to_str(&id));
+                        let c = session_cookie::make_auth_cookie(state.domain.clone(), session::uuid_to_str(&id), state.require_https);
                         cookies.add_private(c);
                         session.set_login_state(true);
-                        Ok(Redirect::to(uri!(index_authorized)))
+                        api::AuthResponse{ status: Status::Ok, message: String::new() }
                     },
-                    None => Err(api::AuthFailResponse{status: Status::BadRequest, reason: String::from("No such session")}),
+                    None => api::AuthResponse{status: Status::BadRequest, message: String::from("No such session")},
                 }
             }
         },
@@ -137,7 +138,7 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
                 None => {},
             }
             session_cookie::remove_session_cookie(&mut cookies);
-            Ok(Redirect::to(uri!(auth_page)))
+            api::AuthResponse{ status: Status::Ok, message: String::new() }
         }
     }
 }
@@ -247,10 +248,11 @@ pub fn start(cfg: Arc<Config>) {
 
     rocket::custom(srv_cfg)
         .mount("/", routes![index, index_authorized, auth_page, auth_already_authenticated, auth_verify, static_files, api, structure])
-        .manage( AppState{
+        .manage(AppState{
             sm: RwLock::new(SessionManager::create(cfg.clone())),
             jobs_dir: PathBuf::from(cfg.jobs_dir.as_str()),
             domain: cfg.domain.clone(),
+            require_https: cfg.require_https,
         })
         .launch();
 }

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub const AUTH_NAME: &'static str = "webmmb_auth";
 
-pub fn make_auth_cookie(domain: String, session_id: String) -> Cookie<'static> {
+pub fn make_auth_cookie(domain: String, session_id: String, require_https: bool) -> Cookie<'static> {
     let now = time::now();
     let expire_on = now.add(time::Duration::days(1));
 
@@ -15,7 +15,7 @@ pub fn make_auth_cookie(domain: String, session_id: String) -> Cookie<'static> {
         .expires(expire_on)
         .path("/")
         .same_site(SameSite::Strict)
-        .secure(true)
+        .secure(require_https)
         .finish()
 }
 

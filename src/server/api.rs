@@ -65,10 +65,9 @@ pub struct ApiResponse {
     pub fail_data: Option<(Status, String)>,
 }
 
-#[derive(Debug)]
-pub struct AuthFailResponse {
+pub struct AuthResponse {
     pub status: Status,
-    pub reason: String,
+    pub message: String,
 }
 
 #[derive(Serialize)]

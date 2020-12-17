@@ -48,12 +48,12 @@ impl<'a> Responder<'a> for api::ApiResponse {
     }
 }
 
-impl<'a> Responder<'a> for api::AuthFailResponse {
+impl<'a> Responder<'a> for api::AuthResponse {
     fn respond_to(self, _: &Request) -> response::Result<'a> {
         Ok(Response::build()
             .status(self.status)
             .header(ContentType::Plain)
-            .sized_body(Cursor::new(self.reason))
+            .sized_body(Cursor::new(self.message))
             .finalize())
     }
 }
