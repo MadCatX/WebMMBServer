@@ -240,6 +240,23 @@ fn prepare_kickoff_file(path: &PathBuf, stage: i32) -> Result<(), String> {
     }
 }
 
+fn process_commands(commands: &serde_json::Value) -> Result<(mmb::commands::MappedJson, mmb::commands::Stages), String> {
+    let mapped = match mmb::commands::json_to_mapped(commands) {
+        Ok(v) => v,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    let stages = match mmb::commands::stages(&mapped) {
+        Some(s) => s,
+        None => return Err(String::from("Cannot determine stages")),
+    };
+    if stages.first != stages.last {
+        return Err(String::from("Calculation spanning over multiple stages is not supported"));
+    }
+
+    Ok((mapped, stages))
+}
+
 fn read_mmb_progress(path: &PathBuf) -> Result<(mmb::State, i32, i32), String> {
     let path_str = path.to_str();
     if path_str.is_none() {
@@ -300,7 +317,11 @@ impl Job {
         self.commands.clone()
     }
 
-    pub fn create(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf) -> Result<Job, String> {
+    pub fn create(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, commands: Option<serde_json::Value>) -> Result<Job, String> {
+        if commands.is_some() {
+            process_commands(commands.as_ref().unwrap())?;
+        }
+
         let mut cmds_path = PathBuf::new();
         cmds_path.push(&job_dir); cmds_path.push(CMDS_FILE_NAME);
 
@@ -312,7 +333,7 @@ impl Job {
 
         Ok(Job{
             name,
-            commands: None,
+            commands,
             job_dir,
             cmds_path,
             mmb_exec_path,
@@ -398,18 +419,7 @@ impl Job {
 
         self.commands = Some(commands);
 
-        let mapped = match mmb::commands::json_to_mapped(self.commands.as_ref().unwrap()) {
-            Ok(v) => v,
-            Err(e) => return Err(e.to_string()),
-        };
-
-        let stages = match mmb::commands::stages(&mapped) {
-            Some(s) => s,
-            None => return Err(String::from("Cannot determine stages")),
-        };
-        if stages.first != stages.last {
-            return Err(String::from("Calculation spanning over multiple stages is not supported"));
-        }
+        let (mapped, stages) = process_commands(self.commands.as_ref().unwrap())?;
 
         match mmb::commands::write(&self.cmds_path, &mapped, stages.first) {
             Ok(_) => (),

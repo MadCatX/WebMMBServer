@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use rocket::http::Status;
 use serde_json;
@@ -63,6 +64,39 @@ fn step_to_str(step: i32) -> String {
     step.to_string()
 }
 
+pub fn activate_example(session: Arc<Session>, data: serde_json::Value, path: PathBuf) -> ApiResponse {
+    let parsed = match serde_json::from_value::<api::SimpleJobRqData>(data) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+    };
+
+    let example_cmds = match mmb::examples::example_data(path, &parsed.id) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+    };
+
+    let cmds_json = match serde_json::from_str(example_cmds.as_str()) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::InternalServerError, e.to_string()),
+    };
+
+    let id = match session.add_job(parsed.id, Some(cmds_json)) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::InternalServerError, e),
+    };
+
+    match session.job_info(id) {
+        Some(v) => match v {
+            Ok(info) => {
+                let resp = job_info_to_api(&id, info);
+                ApiResponse::ok(serde_json::to_value(resp).unwrap())
+            },
+            Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+        },
+        None => ApiResponse::fail(Status::InternalServerError, format!("Job id {} is unknown", id)),
+    }
+}
+
 pub fn clone_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
     let parsed = match serde_json::from_value::<api::CloneJobRqData>(data) {
         Ok(v) => v,
@@ -78,13 +112,15 @@ pub fn clone_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
         Err(e) => return ApiResponse::fail(Status::InternalServerError, e),
     };
 
-    let info = session.job_info(id).unwrap();
-    match info {
-        Ok(info) => {
-            let resp = job_info_to_api(&id, info);
-            ApiResponse::ok(serde_json::to_value(resp).unwrap())
+    match session.job_info(id) {
+        Some(v) => match v {
+            Ok(info) => {
+                let resp = job_info_to_api(&id, info);
+                ApiResponse::ok(serde_json::to_value(resp).unwrap())
+            },
+            Err(e) => ApiResponse::fail(Status::InternalServerError, e),
         },
-        Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+        None => ApiResponse::fail(Status::InternalServerError, format!("Job id {} is unknown", id)),
     }
 }
 
@@ -100,6 +136,17 @@ pub fn delete_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
     } else {
         return ApiResponse::fail(Status::BadRequest, String::from("No job to delete"));
     }
+}
+
+pub fn list_examples(path: PathBuf) -> ApiResponse {
+    let list = match mmb::examples::get_examples(path) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::InternalServerError, e),
+    };
+
+    let resp_list: api::ExampleList = list.into_iter().map(|item| api::ExampleListItem{ name: item.name, description: item.description }).collect();
+
+    ApiResponse::ok(serde_json::to_value(resp_list).unwrap())
 }
 
 pub fn list_jobs(session: Arc<Session>) -> ApiResponse {

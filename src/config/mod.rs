@@ -31,6 +31,7 @@ pub struct Config {
     pub mmb_exec_path: String,
     pub mmb_parameters_path: String,
     pub jobs_dir: String,
+    pub examples_dir: String,
 
     pub root_dir: String,
 
@@ -48,6 +49,7 @@ impl Config {
 
         check_file_exists(cfg.mmb_exec_path.as_str());
         check_file_exists(cfg.mmb_parameters_path.as_str());
+        check_dir_exists(cfg.examples_dir.as_str());
         check_dir_exists(cfg.root_dir.as_str());
         if cfg.domain.len() < 1 {
             panic!("No domain");

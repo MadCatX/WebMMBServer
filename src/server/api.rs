@@ -21,6 +21,8 @@ pub enum ApiRequest {
     SessionInfo(ApiRequestData),
     MmbOutput(ApiRequestData),
     CloneJob(ApiRequestData),
+    ListExamples(ApiRequestData),
+    ActivateExample(ApiRequestData),
 }
 
 #[derive(Deserialize)]
@@ -93,6 +95,14 @@ pub struct OkResponse {
 #[derive(Serialize)]
 pub struct Empty {
 }
+
+#[derive(Serialize)]
+pub struct ExampleListItem {
+    pub name: String,
+    pub description: String,
+}
+
+pub type ExampleList = Vec<ExampleListItem>;
 
 #[derive(Serialize)]
 pub struct JobInfo {

@@ -21,6 +21,7 @@ use crate::server::session_cookie;
 struct AppState {
     pub sm: RwLock<SessionManager>,
     pub jobs_dir: PathBuf,
+    pub examples_dir: PathBuf,
     pub domain: String,
     pub require_https: bool,
 }
@@ -60,7 +61,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for SessionId {
     }
 }
 
-fn get_session(cookies: &mut Cookies, state: State<AppState>) -> Option<Arc<Session>> {
+fn get_session(cookies: &mut Cookies, state: &AppState) -> Option<Arc<Session>> {
     match session_cookie::get_session_id(cookies) {
         Some(session_id) => {
             state.sm.write().unwrap().get_session(&session_id)
@@ -71,7 +72,7 @@ fn get_session(cookies: &mut Cookies, state: State<AppState>) -> Option<Arc<Sess
     }
 }
 
-fn get_session_authorized(cookies: &mut Cookies, state: State<AppState>) -> Option<Arc<Session>> {
+fn get_session_authorized(cookies: &mut Cookies, state: &AppState) -> Option<Arc<Session>> {
     match get_session(cookies, state) {
         Some(s) => {
             match s.is_logged_in() {
@@ -85,7 +86,7 @@ fn get_session_authorized(cookies: &mut Cookies, state: State<AppState>) -> Opti
 
 #[get("/auth")]
 fn auth_already_authenticated(_sid: SessionId, mut cookies: Cookies, state: State<AppState>) -> Redirect {
-    match get_session_authorized(&mut cookies, state) {
+    match get_session_authorized(&mut cookies, &state) {
         Some(_) => Redirect::to(uri!(index_authorized)),
         None => {
             session_cookie::remove_session_cookie(&mut cookies);
@@ -131,7 +132,7 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
             }
         },
         api::AuthRequest::LogOut(_) => {
-            match get_session_authorized(&mut cookies, state) {
+            match get_session_authorized(&mut cookies, &state) {
                 Some(s) => {
                     s.set_login_state(false);
                 },
@@ -145,7 +146,7 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
 
 #[get("/", rank = 2)]
 fn index(mut cookies: Cookies, state: State<AppState>) -> Redirect {
-    match get_session(&mut cookies, state) {
+    match get_session(&mut cookies, &state) {
         Some(s) => {
             if s.is_logged_in() {
                 return Redirect::to(uri!(index_authorized));
@@ -160,7 +161,7 @@ fn index(mut cookies: Cookies, state: State<AppState>) -> Redirect {
 
 #[get("/")]
 fn index_authorized(_sid: SessionId, mut cookies: Cookies, state: State<AppState>) -> Result<NamedFile, WMSError> {
-    match get_session_authorized(&mut cookies, state) {
+    match get_session_authorized(&mut cookies, &state) {
         Some(s) => {
             match NamedFile::open("assets/index.html") {
                 Ok(f) => Ok(f),
@@ -181,7 +182,7 @@ fn static_files(file: PathBuf) -> Option<NamedFile> {
 
 #[post("/api", format = "application/json", data = "<req>")]
 fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Result<api::ApiResponse, WMSError> {
-    let s = match get_session_authorized(&mut cookies, state) {
+    let s = match get_session_authorized(&mut cookies, &state) {
         Some(s) => s,
         None => return Err(WMSError{ status: Status::Forbidden }),
     };
@@ -196,6 +197,8 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
         api::ApiRequest::MmbOutput(v) => Ok(request_handlers::mmb_output(s, v.data)),
         api::ApiRequest::JobCommands(v) => Ok(request_handlers::job_commands(s, v.data)),
         api::ApiRequest::SessionInfo(_) => Ok(request_handlers::session_info(s)),
+        api::ApiRequest::ListExamples(_) => Ok(request_handlers::list_examples(state.examples_dir.clone())),
+        api::ApiRequest::ActivateExample(v) => Ok(request_handlers::activate_example(s, v.data, state.examples_dir.clone())),
     }
 }
 
@@ -251,6 +254,7 @@ pub fn start(cfg: Arc<Config>) {
         .manage(AppState{
             sm: RwLock::new(SessionManager::create(cfg.clone())),
             jobs_dir: PathBuf::from(cfg.jobs_dir.as_str()),
+            examples_dir: PathBuf::from(cfg.examples_dir.as_str()),
             domain: cfg.domain.clone(),
             require_https: cfg.require_https,
         })

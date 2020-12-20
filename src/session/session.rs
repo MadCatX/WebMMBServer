@@ -63,7 +63,11 @@ impl Session {
         }
     }
 
-    fn add_job(&self, name: String) -> Result<Uuid, String> {
+    pub fn add_job(&self, name: String, commands: Option<serde_json::Value>) -> Result<Uuid, String> {
+        if self.has_job_by_name(&name) {
+            return Err(format!("Job with name {} already exists", name));
+        }
+
         let id = Uuid::new_v4();
 
         match prepare_job_dir(&self.jobs_dir, &id, &self.mmb_parameters_path) {
@@ -71,7 +75,8 @@ impl Session {
                 match job::Job::create(
                     name,
                     self.mmb_exec_path.clone(),
-                    job_dir
+                    job_dir,
+                    commands
                 ) {
                     Ok(job) => {
                         let mut data = self.data.write().unwrap();
@@ -90,7 +95,7 @@ impl Session {
             return Err(String::from("Job must have a name"));
         }
         if self.has_job_by_name(&name) {
-            return Err(String::from("Job with such name already exists"));
+            return Err(format!("Job with name {} already exists", name));
         }
 
         let id = Uuid::new_v4();
@@ -239,11 +244,11 @@ impl Session {
 
     pub fn start_job(&self, name: String, commands: serde_json::Value) -> Result<(Uuid, job::JobInfo), String> {
         let ret = if !self.has_job_by_name(&name) {
-            self.add_job(name)
+            self.add_job(name, None)
         } else {
             match self.job_name_to_id(&name) {
                 Some(id) => Ok(id),
-                None => Err(String::from("No such job")),
+                None => Err(format!("No job with name {} exists", name)),
             }
         };
 
