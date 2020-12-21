@@ -214,32 +214,6 @@ fn get_stages(path: &PathBuf, file_name: &str) -> Vec<i32> {
     stages
 }
 
-fn prepare_kickoff_file(path: &PathBuf, stage: i32) -> Result<(), String> {
-    if stage < 2 {
-        return Ok(());
-    }
-
-    let last_frame_file = format!("last.{}.pdb", stage);
-    let kickoff_frame_file = format!("last.{}.pdb", stage - 1);
-
-    let mut last_frame_path = PathBuf::new();
-    last_frame_path.push(path); last_frame_path.push(last_frame_file);
-    let mut kickoff_frame_path = PathBuf::new();
-    kickoff_frame_path.push(path); kickoff_frame_path.push(kickoff_frame_file);
-
-    if last_frame_path.exists() {
-        match std::fs::copy(last_frame_path, kickoff_frame_path) {
-            Ok(_) => return Ok(()),
-            Err(e) => return Err(e.to_string()),
-        };
-    } else {
-        match std::fs::File::create(kickoff_frame_path) {
-            Ok(_) => return Ok(()),
-            Err(e) => return Err(e.to_string()),
-        };
-    }
-}
-
 fn process_commands(commands: &serde_json::Value) -> Result<(mmb::commands::MappedJson, mmb::commands::Stages), String> {
     let mapped = match mmb::commands::json_to_mapped(commands) {
         Ok(v) => v,
@@ -430,11 +404,6 @@ impl Job {
             Ok(()) => (),
             Err(e) => return Err(e),
         };
-
-        match prepare_kickoff_file(&self.job_dir, stages.first) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        }
 
         let proc = match Command::new(&self.mmb_exec_path)
             .current_dir(&self.job_dir)
