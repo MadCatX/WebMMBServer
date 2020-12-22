@@ -1,7 +1,7 @@
 use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::thread;
 use std::time::Duration;
@@ -254,6 +254,16 @@ fn read_mmb_progress(path: &PathBuf) -> Result<(mmb::State, i32, i32), String> {
     }
 }
 
+fn remove_file(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        match std::fs::remove_file(path) {
+            Ok(_) => return Ok(()),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(())
+}
+
 impl Job {
     pub fn available_stages(&self) -> Vec<i32> {
         get_stages(&self.job_dir, TRAJECTORY_FILE_PREFIX)
@@ -384,11 +394,13 @@ impl Job {
     }
 
     pub fn start(&mut self, commands: serde_json::Value) -> Result<(), String> {
-        if self.diag_output_path.exists() {
-            match std::fs::remove_file(&self.diag_output_path) {
-                Ok(_) => {},
-                Err(e) => return Err(e.to_string()),
-            }
+        match remove_file(&self.progress_path) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
+        match remove_file(&self.diag_output_path) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
         }
 
         self.commands = Some(commands);
