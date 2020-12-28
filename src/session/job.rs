@@ -221,8 +221,8 @@ fn process_commands(commands: &serde_json::Value) -> Result<(mmb::commands::Mapp
     };
 
     let stages = match mmb::commands::stages(&mapped) {
-        Some(s) => s,
-        None => return Err(String::from("Cannot determine stages")),
+        Ok(stages) => stages,
+        Err(e) => return Err(e),
     };
     if stages.first != stages.last {
         return Err(String::from("Calculation spanning over multiple stages is not supported"));

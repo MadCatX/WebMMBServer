@@ -4,12 +4,13 @@ use std::io::Write;
 use std::path::PathBuf;
 use serde_json;
 
+const ADV_PARAMS: &'static str = "advParams";
 const KEY_FIRST_STAGE: &'static str = "firstStage";
 const KEY_LAST_STAGE: &'static str = "lastStage";
 const KEYLESS_ENTRIES: &'static [&'static str] = &["sequences", "doubleHelices", "baseInteractions", "ntcs"];
 const IGNORED_KEYS: &'static [&'static str] = &[KEY_FIRST_STAGE, KEY_LAST_STAGE];
 
-pub type MappedJson = HashMap<String, Vec<String>>;
+pub type MappedJson = HashMap<String, serde_json::Value>;
 
 pub struct Stages {
     pub first: i32,
@@ -20,7 +21,7 @@ fn keyless_commands_item(keyless: &Vec<String>) -> String {
     keyless.iter().fold(String::new(), |p, c| format!("{}\n{}\n", p, c))
 }
 
-fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Option<String> {
+fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Result<String, serde_json::Error> {
     let mut txt = String::new();
     let mut keyless = String::new();
 
@@ -30,16 +31,21 @@ fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Option<String> {
     for (k, v) in mapped {
         if IGNORED_KEYS.contains(&k.as_str()) {
             continue;
+        } else if k == ADV_PARAMS {
         } else if KEYLESS_ENTRIES.contains(&k.as_str()) {
-            let item = keyless_commands_item(&v);
+            let sv = serde_json::from_value::<Vec<String>>(v.clone())?;
+
+            let item = keyless_commands_item(&sv);
             if k == "sequences" {
                 keyless = format!("{}{}", item, keyless);
             } else {
                 keyless.push_str(item.as_str());
             }
         } else {
+            let sv = serde_json::from_value::<Vec<String>>(v.clone())?;
+
             let mut item = format!("{} ", k);
-            for i in v {
+            for i in sv {
                 item.push_str(format!("{} ", i).as_str());
             }
             item.push('\n');
@@ -49,7 +55,7 @@ fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Option<String> {
     }
 
     txt.push_str(keyless.as_str());
-    Some(txt)
+    Ok(txt)
 }
 
 pub fn json_to_mapped(data: &serde_json::Value) -> Result<MappedJson, String> {
@@ -59,48 +65,59 @@ pub fn json_to_mapped(data: &serde_json::Value) -> Result<MappedJson, String> {
     }
 }
 
-pub fn stages(mapped: &MappedJson) -> Option<Stages> {
+pub fn stages(mapped: &MappedJson) -> Result<Stages, String> {
     let mut first: Option<i32> = None;
     let mut last: Option<i32> = None;
 
     for (k, v) in mapped {
-        if v.len() < 1 {
-            continue;
-        }
         if k == KEY_FIRST_STAGE {
-            match v[0].parse::<i32>() {
+            let sv = match serde_json::from_value::<Vec<String>>(v.clone()) {
+                Ok(sv) => sv,
+                Err(e) => return Err(e.to_string()),
+            };
+            if sv.len() != 1 {
+                return Err(format!("Invalid vector size for {}", KEY_FIRST_STAGE));
+            }
+
+            match sv[0].parse::<i32>() {
                 Ok(v) => first = Some(v),
-                Err(_) => return None,
+                Err(e) => return Err(e.to_string()),
             }
         } else if k == KEY_LAST_STAGE {
-            match v[0].parse::<i32>() {
+            let sv = match serde_json::from_value::<Vec<String>>(v.clone()) {
+                Ok(sv) => sv,
+                Err(e) => return Err(e.to_string()),
+            };
+            if sv.len() != 1 {
+                return Err(format!("Invalid vector size for {}", KEY_LAST_STAGE));
+            }
+
+            match sv[0].parse::<i32>() {
                 Ok(v) => last = Some(v),
-                Err(_) => return None,
+                Err(e) => return Err(e.to_string()),
             }
         }
 
         if first.is_some() && last.is_some() {
-            return Some(Stages{ first: first.unwrap(), last: last.unwrap() })
+            return Ok(Stages{ first: first.unwrap(), last: last.unwrap() })
         }
     }
 
-    return None;
+    return Err(String::from("Stages are not defined properly"));
 }
 
 pub fn write(path: &PathBuf, mapped: &MappedJson, stage: i32) -> Result<(), String> {
-    let parsed = mapped_commands_to_txt(mapped, stage);
-    if parsed.is_none() {
-        return Err(String::from("Invalid MMB commands"));
-    }
+    let parsed = match mapped_commands_to_txt(mapped, stage) {
+        Ok(parsed) => parsed,
+        Err(e) => return Err(format!("Invalid MMB commands: {}", e.to_string())),
+    };
 
     let mut fh = match File::create(path) {
         Ok(f) => f,
         Err(e) => return Err(e.to_string())
     };
 
-    let txt_cmds = parsed.unwrap();
-
-    match fh.write_all(txt_cmds.as_bytes()) {
+    match fh.write_all(parsed.as_bytes()) {
         Ok(_) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
