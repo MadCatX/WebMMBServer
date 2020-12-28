@@ -1,3 +1,4 @@
+pub mod advanced_commands;
 pub mod commands;
 pub mod examples;
 
