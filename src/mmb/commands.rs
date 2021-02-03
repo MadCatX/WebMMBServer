@@ -9,6 +9,7 @@ use crate::mmb::advanced_commands;
 const ADV_PARAMS: &'static str = "advParams";
 const KEY_FIRST_STAGE: &'static str = "firstStage";
 const KEY_LAST_STAGE: &'static str = "lastStage";
+const KEY_NUM_REP_INTVLS: &'static str = "numReportingIntervals";
 const KEYLESS_ENTRIES: &'static [&'static str] = &["sequences", "doubleHelices", "baseInteractions", "ntcs"];
 const IGNORED_KEYS: &'static [&'static str] = &[KEY_FIRST_STAGE, KEY_LAST_STAGE];
 
@@ -21,6 +22,30 @@ pub struct Stages {
 
 fn keyless_commands_item(keyless: &Vec<String>) -> String {
     keyless.iter().fold(String::new(), |p, c| format!("{}\n{}\n", p, c))
+}
+
+fn get_value_from_raw<T, F>(lines: &Vec<&str>, key: &'static str, converter: F) -> Option<T> where F: Fn(&str) -> Option<T> {
+    let lwr_key = key.to_lowercase();
+
+    for l in lines {
+        let segments = l.trim().split(" ").collect::<Vec<_>>();
+        if segments.len() < 2 {
+            continue;
+        }
+
+        if segments[0].to_lowercase() != lwr_key {
+            continue;
+        }
+
+        for idx in 1..segments.len() {
+            if segments[idx].len() < 1 {
+                continue;
+            }
+            return converter(segments[idx]);
+        }
+    }
+
+    None
 }
 
 fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Result<String, serde_json::Error> {
@@ -66,11 +91,48 @@ fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Result<String, ser
     Ok(txt)
 }
 
+pub struct ParsedRaw {
+    pub first_stage: i32,
+    pub last_stage: i32,
+    pub num_reporting_intervals: i32,
+}
+
 pub fn json_to_mapped(data: &serde_json::Value) -> Result<MappedJson, String> {
     match serde_json::from_value::<MappedJson>(data.clone()) {
         Ok(v) => Ok(v),
         Err(e) => Err(e.to_string()),
     }
+}
+
+pub fn parse_raw(raw: &str) -> Result<ParsedRaw, String> {
+    let converter = |s: &str| -> Option<i32> {
+        match s.parse::<i32>() {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        }
+    };
+    let lines = raw.split("\n").collect::<Vec<_>>();
+
+    let first_stage = match get_value_from_raw(&lines, KEY_FIRST_STAGE, converter) {
+        Some(v) => v,
+        None => return Err(format!("{} was not specified or is invalid", KEY_FIRST_STAGE)),
+    };
+    let last_stage = match get_value_from_raw(&lines, KEY_LAST_STAGE, converter) {
+        Some(v) => v,
+        None => return Err(format!("{} was not specified or is invalid", KEY_LAST_STAGE)),
+    };
+    let num_reporting_intervals = match get_value_from_raw(&lines, KEY_NUM_REP_INTVLS, converter) {
+        Some(v) => v,
+        None => return Err(format!("{} was not specified or is invalid", KEY_NUM_REP_INTVLS)),
+    };
+
+    Ok(
+        ParsedRaw {
+            first_stage,
+            last_stage,
+            num_reporting_intervals
+        }
+    )
 }
 
 pub fn stages(mapped: &MappedJson) -> Result<Stages, String> {
@@ -120,12 +182,16 @@ pub fn write(path: &PathBuf, mapped: &MappedJson, stage: i32) -> Result<(), Stri
         Err(e) => return Err(format!("Invalid MMB commands: {}", e.to_string())),
     };
 
+    write_raw(path, &parsed)
+}
+
+pub fn write_raw(path: &PathBuf, raw_commands: &str) -> Result<(), String> {
     let mut fh = match File::create(path) {
         Ok(f) => f,
         Err(e) => return Err(e.to_string())
     };
 
-    match fh.write_all(parsed.as_bytes()) {
+    match fh.write_all(raw_commands.as_bytes()) {
         Ok(_) => Ok(()),
         Err(e) => Err(e.to_string()),
     }

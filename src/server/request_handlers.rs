@@ -19,6 +19,7 @@ fn empty_job_info() -> api::JobInfo {
         total_steps: 0,
         available_stages: Vec::new(),
         created_on: 0.to_string(),
+        commands_mode: api::JobCommandsMode::Synthetic,
     }
 }
 
@@ -31,6 +32,10 @@ fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
         total_steps: info.total_steps,
         available_stages: info.available_stages,
         created_on: info.created_on.to_string(),
+        commands_mode: match info.commands_mode {
+            session::job::CommandsMode::Synthetic => api::JobCommandsMode::Synthetic,
+            session::job::CommandsMode::Raw => api::JobCommandsMode::Raw,
+        },
     }
 }
 
@@ -182,8 +187,20 @@ pub fn job_commands(session: Arc<Session>, data: serde_json::Value) -> ApiRespon
     };
 
     match session.job_commands(id) {
-        Some(commands) => ApiResponse::ok(serde_json::to_value(commands).unwrap()),
-        None => ApiResponse::fail(Status::BadRequest, String::from("Unknown job id")),
+        Ok(commands) => ApiResponse::ok(serde_json::to_value(commands).unwrap()),
+        Err(e) => ApiResponse::fail(Status::BadRequest, e),
+    }
+}
+
+pub fn job_commands_raw(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let id = match handle_simple_rq_data(data) {
+        Ok(id) => id,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e),
+    };
+
+    match session.job_commands_raw(id) {
+        Ok(commands) => ApiResponse::ok(serde_json::to_value(commands).unwrap()),
+        Err(e) => ApiResponse::fail(Status::BadRequest, e),
     }
 }
 
@@ -238,6 +255,22 @@ pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
 
     let start_data = parsed.unwrap();
     match session.start_job(start_data.name, start_data.commands) {
+        Ok((id, info)) => {
+            let resp = job_info_to_api(&id, info);
+            ApiResponse::ok(serde_json::to_value(resp).unwrap())
+        },
+        Err(e) => ApiResponse::fail(Status::BadRequest, e),
+    }
+}
+
+pub fn start_job_raw(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let parsed: serde_json::Result<api::StartJobRawRqData> = serde_json::from_value(data);
+    if parsed.is_err() {
+        return ApiResponse::fail(Status::BadRequest, String::from("Invalid start raw job request"));
+    }
+
+    let start_data_raw = parsed.unwrap();
+    match session.start_job_raw(start_data_raw.name, start_data_raw.commands) {
         Ok((id, info)) => {
             let resp = job_info_to_api(&id, info);
             ApiResponse::ok(serde_json::to_value(resp).unwrap())

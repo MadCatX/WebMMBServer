@@ -13,11 +13,13 @@ pub struct ApiRequestData {
 #[serde(tag = "req_type")]
 pub enum ApiRequest {
     StartJob(ApiRequestData),
+    StartJobRaw(ApiRequestData),
     StopJob(ApiRequestData),
     DeleteJob(ApiRequestData),
     JobStatus(ApiRequestData),
     ListJobs(ApiRequestData),
     JobCommands(ApiRequestData),
+    JobCommandsRaw(ApiRequestData),
     SessionInfo(ApiRequestData),
     MmbOutput(ApiRequestData),
     CloneJob(ApiRequestData),
@@ -58,6 +60,11 @@ pub struct StartJobRqData {
     pub name: String,
     pub commands: serde_json::Value,
 }
+#[derive(Deserialize)]
+pub struct StartJobRawRqData {
+    pub name: String,
+    pub commands: String,
+}
 
 /* Responses */
 
@@ -78,6 +85,12 @@ pub enum JobState {
     Running,
     Finished,
     Failed,
+}
+
+#[derive(Serialize)]
+pub enum JobCommandsMode {
+    Synthetic,
+    Raw,
 }
 
 #[derive(Serialize)]
@@ -113,6 +126,7 @@ pub struct JobInfo {
     pub total_steps: i32,
     pub available_stages: Vec<i32>,
     pub created_on: String,
+    pub commands_mode: JobCommandsMode,
 }
 
 #[derive(Serialize)]

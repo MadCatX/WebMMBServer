@@ -76,7 +76,36 @@ impl Session {
                     name,
                     self.mmb_exec_path.clone(),
                     job_dir,
-                    commands
+                    commands,
+                    None
+                ) {
+                    Ok(job) => {
+                        let mut data = self.data.write().unwrap();
+                        data.jobs.insert(id, job);
+                        Ok(id)
+                    },
+                    Err(e) => Err(e),
+                }
+            },
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn add_job_raw(&self, name: String, raw_commands: Option<String>) -> Result<Uuid, String> {
+        if self.has_job_by_name(&name) {
+            return Err(format!("Job with name {} already exists", name));
+        }
+
+        let id = Uuid::new_v4();
+
+        match prepare_job_dir(&self.jobs_dir, &id, &self.mmb_parameters_path) {
+            Ok(job_dir) => {
+                match job::Job::create(
+                    name,
+                    self.mmb_exec_path.clone(),
+                    job_dir,
+                    None,
+                    raw_commands
                 ) {
                     Ok(job) => {
                         let mut data = self.data.write().unwrap();
@@ -200,12 +229,27 @@ impl Session {
         list
     }
 
-    pub fn job_commands(&self, id: Uuid) -> Option<serde_json::Value> {
+    pub fn job_commands(&self, id: Uuid) -> Result<serde_json::Value, String> {
         let data = self.data.read().unwrap();
 
         match data.jobs.get(&id) {
-            Some(job) => job.commands(),
-            None => None,
+            Some(job) => match job.commands() {
+                Some(cmds) => Ok(cmds),
+                None => Err(String::from("No synthetic commands, the job may have been started with raw commands")),
+            },
+            None => Err(String::from("Unknown job id")),
+        }
+    }
+
+    pub fn job_commands_raw(&self, id: Uuid) -> Result<String, String> {
+        let data = self.data.read().unwrap();
+
+        match data.jobs.get(&id) {
+            Some(job) => match job.commands_raw() {
+                Some(cmds) => Ok(cmds),
+                None => Err(String::from("No raw commands, the job may have been started with synthetic commands")),
+            },
+            None => Err(String::from("Unknown job id")),
         }
     }
 
@@ -260,6 +304,34 @@ impl Session {
         let mut data = self.data.write().unwrap();
         let job = data.jobs.get_mut(&id).unwrap();
         match job.start(commands) {
+            Ok(()) => {
+                match job.info() {
+                    Ok(info) => Ok((id, info)),
+                    Err(e) => Err(e),
+                }
+            },
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn start_job_raw(&self, name: String, raw_commands: String) -> Result<(Uuid, job::JobInfo), String> {
+        let ret = if !self.has_job_by_name(&name) {
+            self.add_job_raw(name, None)
+        } else {
+            match self.job_name_to_id(&name) {
+                Some(id) => Ok(id),
+                None => Err(format!("No job with name {} exists", name)),
+            }
+        };
+
+        let id = match ret {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+
+        let mut data = self.data.write().unwrap();
+        let job = data.jobs.get_mut(&id).unwrap();
+        match job.start_raw(raw_commands) {
             Ok(()) => {
                 match job.info() {
                     Ok(info) => Ok((id, info)),

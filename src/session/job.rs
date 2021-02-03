@@ -17,6 +17,12 @@ const LAST_FRAME_FILE_PREFIX: &'static str = "last";
 const TRAJECTORY_FILE_PREFIX: &'static str = "trajectory";
 
 #[derive(Clone)]
+pub enum CommandsMode {
+    Synthetic,
+    Raw,
+}
+
+#[derive(Clone)]
 pub struct JobInfo {
     pub name: String,
     pub state: mmb::State,
@@ -24,11 +30,13 @@ pub struct JobInfo {
     pub total_steps: i32,
     pub available_stages: Vec<i32>,
     pub created_on: u128,
+    pub commands_mode: CommandsMode,
 }
 
 pub struct Job {
     pub name: String,
     commands: Option<serde_json::Value>,
+    raw_commands: Option<String>,
     job_dir: PathBuf,
     cmds_path: PathBuf,
     mmb_exec_path: PathBuf,
@@ -265,6 +273,31 @@ fn remove_file(path: &Path) -> Result<(), String> {
 }
 
 impl Job {
+    fn launch(&self) -> Result<Child, std::io::Error> {
+        Command::new(&self.mmb_exec_path)
+            .current_dir(&self.job_dir)
+            .arg("-C")
+            .arg(&self.cmds_path)
+            .arg("-progress")
+            .arg(&self.progress_path)
+            .arg("-output")
+            .arg(&self.diag_output_path)
+            .spawn()
+    }
+
+    fn prune_path(&self) -> Result<(), String> {
+        match remove_file(&self.progress_path) {
+            Ok(_) => (),
+            Err(e) => return Err(e.to_string()),
+        }
+        match remove_file(&self.diag_output_path) {
+            Ok(_) => (),
+            Err(e) => return Err(e.to_string()),
+        }
+
+        Ok(())
+    }
+
     pub fn available_stages(&self) -> Vec<i32> {
         get_stages(&self.job_dir, TRAJECTORY_FILE_PREFIX)
     }
@@ -287,6 +320,7 @@ impl Job {
         Ok(Job{
             name,
             commands: src.commands.clone(),
+            raw_commands: src.raw_commands.clone(),
             job_dir,
             cmds_path,
             mmb_exec_path,
@@ -301,7 +335,26 @@ impl Job {
         self.commands.clone()
     }
 
-    pub fn create(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, commands: Option<serde_json::Value>) -> Result<Job, String> {
+    pub fn commands_mode(&self) -> CommandsMode {
+        assert!(!(self.commands.is_some() && self.raw_commands.is_some()), "Synthetic and raw commands cannot be both specified at the same time");
+
+        if self.commands.is_some() {
+            return CommandsMode::Synthetic;
+        }
+        if self.raw_commands.is_some() {
+            return CommandsMode::Raw;
+        }
+
+        panic!("Neither synthetic nor raw commands have been set");
+    }
+
+    pub fn commands_raw(&self) -> Option<String> {
+        self.raw_commands.clone()
+    }
+
+    pub fn create(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, commands: Option<serde_json::Value>, raw_commands: Option<String>) -> Result<Job, String> {
+        assert!(!(commands.is_some() && raw_commands.is_some()), "Synthetic and raw commands cannot be both specified at the same time");
+
         if commands.is_some() {
             process_commands(commands.as_ref().unwrap())?;
         }
@@ -318,6 +371,7 @@ impl Job {
         Ok(Job{
             name,
             commands,
+            raw_commands,
             job_dir,
             cmds_path,
             mmb_exec_path,
@@ -343,6 +397,7 @@ impl Job {
                         Ok(d) => d.as_millis(),
                         Err(_) => 0
                     },
+                    commands_mode: self.commands_mode(),
                 }),
             mmb::State::Unknown => return Err(String::from("Unknown job state")),
             _ => (),
@@ -360,6 +415,7 @@ impl Job {
                         Ok(d) => d.as_millis(),
                         Err(_) => 0
                     },
+                    commands_mode: self.commands_mode(),
                 };
                 if state == mmb::State::Running {
                     // MMB reports the job has finished but the MMB process is still running
@@ -381,6 +437,7 @@ impl Job {
                     total_steps: 0,
                     available_stages: self.available_stages(),
                     created_on: 0,
+                    commands_mode: CommandsMode::Synthetic,
                 })
             },
         }
@@ -394,11 +451,7 @@ impl Job {
     }
 
     pub fn start(&mut self, commands: serde_json::Value) -> Result<(), String> {
-        match remove_file(&self.progress_path) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        }
-        match remove_file(&self.diag_output_path) {
+        match self.prune_path() {
             Ok(_) => (),
             Err(e) => return Err(e),
         }
@@ -417,19 +470,43 @@ impl Job {
             Err(e) => return Err(e),
         };
 
-        let proc = match Command::new(&self.mmb_exec_path)
-            .current_dir(&self.job_dir)
-            .arg("-C")
-            .arg(&self.cmds_path)
-            .arg("-progress")
-            .arg(&self.progress_path)
-            .arg("-output")
-            .arg(&self.diag_output_path)
-            .spawn() {
-                Ok(proc) => proc,
-                Err(_) => return Err(String::from("Failed to start MMB process"))
-            };
+        let proc = match self.launch() {
+            Ok(proc) => proc,
+            Err(e) => return Err(format!("Failed to launch MMB process: {}", e)),
+        };
+        self.mmb_process = Some(proc);
 
+        Ok(())
+    }
+
+    pub fn start_raw(&mut self, raw_commands: String) -> Result<(), String> {
+        match self.prune_path() {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
+
+
+        let parsed = match mmb::commands::parse_raw(&raw_commands) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+
+        match mmb::commands::write_raw(&self.cmds_path, &raw_commands) {
+            Ok(_) => (),
+            Err(e) => return Err(e.to_string()),
+        }
+
+        match clear_stages(&self.job_dir, parsed.first_stage) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        }
+
+        self.raw_commands = Some(raw_commands);
+
+        let proc = match self.launch() {
+            Ok(proc) => proc,
+            Err(e) => return Err(format!("Failed to launch MMB process: {}", e)),
+        };
         self.mmb_process = Some(proc);
 
         Ok(())
