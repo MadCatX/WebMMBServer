@@ -451,6 +451,10 @@ impl Job {
     }
 
     pub fn start(&mut self, commands: serde_json::Value) -> Result<(), String> {
+        if self.raw_commands.is_some() {
+            return Err(String::from("Job created in raw commands mode cannot be run in synthetic commands mode"));
+        }
+
         match self.prune_path() {
             Ok(_) => (),
             Err(e) => return Err(e),
@@ -480,6 +484,10 @@ impl Job {
     }
 
     pub fn start_raw(&mut self, raw_commands: String) -> Result<(), String> {
+        if self.commands.is_some() {
+            return Err(String::from("Job created in synthetic commands mode cannot be run in raw commands mode"));
+        }
+
         match self.prune_path() {
             Ok(_) => (),
             Err(e) => return Err(e),
