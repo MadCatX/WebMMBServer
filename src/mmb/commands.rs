@@ -126,6 +126,16 @@ pub fn parse_raw(raw: &str) -> Result<ParsedRaw, String> {
         None => return Err(format!("{} was not specified or is invalid", KEY_NUM_REP_INTVLS)),
     };
 
+    if first_stage < 1 {
+        return Err(format!("{} must be positive", KEY_FIRST_STAGE));
+    }
+    if first_stage != last_stage {
+        return Err(String::from("Multi-stage jobs are currently not supported"));
+    }
+    if num_reporting_intervals < 1 {
+        return Err(format!("{} must be positive", KEY_NUM_REP_INTVLS));
+    }
+
     Ok(
         ParsedRaw {
             first_stage,
