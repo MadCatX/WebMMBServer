@@ -429,7 +429,7 @@ impl Job {
                 }
                 Ok(info)
             },
-            Err(e) => {
+            Err(e) => { // Error here may indicate that MMB has not created progress file yet. That is okay
                 Ok(JobInfo{
                     name: self.name.clone(),
                     state,
@@ -437,7 +437,7 @@ impl Job {
                     total_steps: 0,
                     available_stages: self.available_stages(),
                     created_on: 0,
-                    commands_mode: CommandsMode::Synthetic,
+                    commands_mode: self.commands_mode(),
                 })
             },
         }
