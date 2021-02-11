@@ -125,6 +125,7 @@ pub struct JobInfo {
     pub step: String,
     pub total_steps: i32,
     pub available_stages: Vec<i32>,
+    pub current_stage: Option<i32>,
     pub created_on: String,
     pub commands_mode: JobCommandsMode,
 }

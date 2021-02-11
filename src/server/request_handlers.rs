@@ -18,6 +18,7 @@ fn empty_job_info() -> api::JobInfo {
         step: step_to_str(0),
         total_steps: 0,
         available_stages: Vec::new(),
+        current_stage: None,
         created_on: 0.to_string(),
         commands_mode: api::JobCommandsMode::Synthetic,
     }
@@ -31,6 +32,7 @@ fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
         step: step_to_str(info.step),
         total_steps: info.total_steps,
         available_stages: info.available_stages,
+        current_stage: info.current_stage,
         created_on: info.created_on.to_string(),
         commands_mode: match info.commands_mode {
             session::job::CommandsMode::Synthetic => api::JobCommandsMode::Synthetic,

@@ -29,6 +29,7 @@ pub struct JobInfo {
     pub step: i32,
     pub total_steps: i32,
     pub available_stages: Vec<i32>,
+    pub current_stage: Option<i32>,
     pub created_on: u128,
     pub commands_mode: CommandsMode,
 }
@@ -42,6 +43,7 @@ pub struct Job {
     mmb_exec_path: PathBuf,
     progress_path: PathBuf,
     diag_output_path: PathBuf,
+    current_stage: Option<i32>,
     mmb_process: Option<Child>,
     created_on: std::time::SystemTime,
 }
@@ -326,6 +328,7 @@ impl Job {
             mmb_exec_path,
             progress_path,
             diag_output_path,
+            current_stage: src.current_stage,
             mmb_process: None,
             created_on: std::time::SystemTime::now(),
         })
@@ -355,9 +358,15 @@ impl Job {
     pub fn create(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, commands: Option<serde_json::Value>, raw_commands: Option<String>) -> Result<Job, String> {
         assert!(!(commands.is_some() && raw_commands.is_some()), "Synthetic and raw commands cannot be both specified at the same time");
 
-        if commands.is_some() {
-            process_commands(commands.as_ref().unwrap())?;
-        }
+        let current_stage = if commands.is_some() {
+            let (_, stages) = process_commands(commands.as_ref().unwrap())?;
+            Some(stages.first)
+        } else if raw_commands.is_some() {
+            let parsed = mmb::commands::parse_raw(raw_commands.as_ref().unwrap())?;
+            Some(parsed.first_stage)
+        } else {
+            None
+        };
 
         let mut cmds_path = PathBuf::new();
         cmds_path.push(&job_dir); cmds_path.push(CMDS_FILE_NAME);
@@ -377,6 +386,7 @@ impl Job {
             mmb_exec_path,
             progress_path,
             diag_output_path,
+            current_stage,
             mmb_process: None,
             created_on: std::time::SystemTime::now(),
         })
@@ -393,6 +403,7 @@ impl Job {
                     step: 0,
                     total_steps: 0,
                     available_stages: self.available_stages(),
+                    current_stage: self.current_stage,
                     created_on: match self.created_on.duration_since(std::time::UNIX_EPOCH) {
                         Ok(d) => d.as_millis(),
                         Err(_) => 0
@@ -411,6 +422,7 @@ impl Job {
                     step,
                     total_steps,
                     available_stages: self.available_stages(),
+                    current_stage: self.current_stage,
                     created_on: match self.created_on.duration_since(std::time::UNIX_EPOCH) {
                         Ok(d) => d.as_millis(),
                         Err(_) => 0
@@ -436,6 +448,7 @@ impl Job {
                     step: 0,
                     total_steps: 0,
                     available_stages: self.available_stages(),
+                    current_stage: self.current_stage,
                     created_on: 0,
                     commands_mode: self.commands_mode(),
                 })
