@@ -5,10 +5,12 @@ use std::path::PathBuf;
 use serde_json;
 
 use crate::mmb::advanced_commands;
+use crate::mmb::mobilizers;
 
 const ADV_PARAMS: &'static str = "advParams";
 const KEY_FIRST_STAGE: &'static str = "firstStage";
 const KEY_LAST_STAGE: &'static str = "lastStage";
+const KEY_MOBILIZERS: &'static str = "mobilizers";
 const KEY_NUM_REP_INTVLS: &'static str = "numReportingIntervals";
 const KEYLESS_ENTRIES: &'static [&'static str] = &["sequences", "doubleHelices", "baseInteractions", "ntcs"];
 const IGNORED_KEYS: &'static [&'static str] = &[KEY_FIRST_STAGE, KEY_LAST_STAGE];
@@ -52,6 +54,7 @@ fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Result<String, ser
     let mut txt = String::new();
     let mut keyless = String::new();
     let mut advanced = String::new();
+    let mut mobilizers: Option<Vec<String>> = None;
 
     txt.push_str(format!("{} {}\n", KEY_FIRST_STAGE, stage).as_str());
     txt.push_str(format!("{} {}\n", KEY_LAST_STAGE, stage).as_str());
@@ -62,6 +65,11 @@ fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Result<String, ser
         } else if k == ADV_PARAMS {
             match advanced_commands::advanced_to_string(v.clone()) {
                 Ok(s) => advanced = s,
+                Err(e) => return Err(e),
+            }
+        } else if k == KEY_MOBILIZERS {
+            match mobilizers::to_string_list(v.clone()) {
+                Ok(s) => mobilizers = Some(s),
                 Err(e) => return Err(e),
             }
         } else if KEYLESS_ENTRIES.contains(&k.as_str()) {
@@ -88,6 +96,16 @@ fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Result<String, ser
 
     txt.push_str(advanced.as_str());
     txt.push_str(keyless.as_str());
+
+    match mobilizers {
+        Some(mobs) => {
+            for m in mobs.iter() {
+                txt.push_str(format!("mobilizer {}\n", m).as_str());
+            }
+        },
+        None => (),
+    }
+
     Ok(txt)
 }
 

@@ -1,6 +1,7 @@
 pub mod advanced_commands;
 pub mod commands;
 pub mod examples;
+mod mobilizers;
 
 use serde::Deserialize;
 
