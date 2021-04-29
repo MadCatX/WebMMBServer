@@ -1,6 +1,44 @@
+use std::collections::HashMap;
 use rocket::http::Status;
 use serde::{Deserialize, Serialize};
 use serde_json;
+
+/* JSON commands */
+
+#[derive(Deserialize, Serialize, Clone)]
+pub enum BondMobility {
+    Rigid,
+    Torsion,
+    Free,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Mobilizer {
+    pub bond_mobility: BondMobility,
+    pub chain: Option<String>,
+    pub first_residue: Option<i32>,
+    pub last_residue: Option<i32>,
+}
+
+pub type JsonAdvancedParameters = HashMap<String, serde_json::Value>;
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct JsonCommands {
+    pub base_interaction_scale_factor: f64,
+    pub use_multithreaded_computation: bool,
+    pub temperature: f64,
+    pub first_stage: i32,
+    pub last_stage: i32,
+    pub reporting_interval: f64,
+    pub num_reporting_intervals: i32,
+    pub sequences: Vec<String>,
+    pub double_helices: Vec<String>,
+    pub base_interactions: Vec<String>,
+    pub ntcs: Vec<String>,
+    pub mobilizers: Vec<Mobilizer>,
+    pub adv_params: JsonAdvancedParameters,
+    pub set_default_MD_parameters: bool,
+}
 
 /* Requests */
 
@@ -53,12 +91,12 @@ pub struct SimpleJobRqData {
 #[derive(Deserialize)]
 pub struct ResumeJobRqData {
     pub id: String,
-    pub commands: serde_json::Value,
+    pub commands: JsonCommands,
 }
 #[derive(Deserialize)]
 pub struct StartJobRqData {
     pub name: String,
-    pub commands: serde_json::Value,
+    pub commands: JsonCommands,
 }
 #[derive(Deserialize)]
 pub struct StartJobRawRqData {

@@ -1,29 +1,34 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use serde_json;
 
-use crate::mmb::advanced_commands;
-use crate::mmb::mobilizers;
+use crate::mmb::advanced_params;
+use crate::server::api;
 
-const ADV_PARAMS: &'static str = "advParams";
 const KEY_FIRST_STAGE: &'static str = "firstStage";
 const KEY_LAST_STAGE: &'static str = "lastStage";
-const KEY_MOBILIZERS: &'static str = "mobilizers";
+const KEY_BASE_ITRS_SF: &'static str = "baseInteractionScaleFactor";
 const KEY_NUM_REP_INTVLS: &'static str = "numReportingIntervals";
-const KEYLESS_ENTRIES: &'static [&'static str] = &["sequences", "doubleHelices", "baseInteractions", "ntcs"];
-const IGNORED_KEYS: &'static [&'static str] = &[KEY_FIRST_STAGE, KEY_LAST_STAGE];
 
-pub type MappedJson = HashMap<String, serde_json::Value>;
+pub struct ParsedRaw {
+    pub first_stage: i32,
+    pub last_stage: i32,
+    pub num_reporting_intervals: i32,
+}
 
 pub struct Stages {
     pub first: i32,
     pub last: i32,
 }
 
-fn keyless_commands_item(keyless: &Vec<String>) -> String {
-    keyless.iter().fold(String::new(), |p, c| format!("{}\n{}\n", p, c))
+impl std::convert::From<&api::BondMobility> for String {
+    fn from(bm: &api::BondMobility) -> String {
+        match bm {
+            api::BondMobility::Rigid => String::from("Rigid"),
+            api::BondMobility::Torsion => String::from("Torsion"),
+            api::BondMobility::Free => String::from("Free"),
+        }
+    }
 }
 
 fn get_value_from_raw<T, F>(lines: &Vec<&str>, key: &'static str, converter: F) -> Option<T> where F: Fn(&str) -> Option<T> {
@@ -50,76 +55,63 @@ fn get_value_from_raw<T, F>(lines: &Vec<&str>, key: &'static str, converter: F) 
     None
 }
 
-fn mapped_commands_to_txt(mapped: &MappedJson, stage: i32) -> Result<String, serde_json::Error> {
+fn keyed_to_txt<T: std::fmt::Display>(key: &str, value: T) -> String {
+    format!("{} {}\n", key, value)
+}
+
+
+fn keyless_to_txt(keyless: &Vec<String>) -> String {
+    keyless.iter().fold(String::new(), |p, c| format!("{}\n{}\n", p, c))
+}
+
+fn mobilizers_to_txt(mobilizers: &Vec<api::Mobilizer>) -> String {
     let mut txt = String::new();
-    let mut keyless = String::new();
-    let mut advanced = String::new();
-    let mut mobilizers: Option<Vec<String>> = None;
 
-    txt.push_str(format!("{} {}\n", KEY_FIRST_STAGE, stage).as_str());
-    txt.push_str(format!("{} {}\n", KEY_LAST_STAGE, stage).as_str());
+    for m in mobilizers.iter() {
+        let mut line = format!("mobilizer {}", String::from(&m.bond_mobility));
 
-    for (k, v) in mapped {
-        if IGNORED_KEYS.contains(&k.as_str()) {
-            continue;
-        } else if k == ADV_PARAMS {
-            match advanced_commands::advanced_to_string(v.clone()) {
-                Ok(s) => advanced = s,
-                Err(e) => return Err(e),
+        if m.chain.is_some() {
+            line.push_str(format!(" {}", m.chain.as_ref().unwrap()).as_str());
+
+            if m.first_residue.is_some() && m.last_residue.is_some() {
+                line.push_str(format!(" {} {}", m.first_residue.unwrap(), m.last_residue.unwrap()).as_str());
             }
-        } else if k == KEY_MOBILIZERS {
-            match mobilizers::to_string_list(v.clone()) {
-                Ok(s) => mobilizers = Some(s),
-                Err(e) => return Err(e),
-            }
-        } else if KEYLESS_ENTRIES.contains(&k.as_str()) {
-            let sv = serde_json::from_value::<Vec<String>>(v.clone())?;
-
-            let item = keyless_commands_item(&sv);
-            if k == "sequences" {
-                keyless = format!("{}{}", item, keyless);
-            } else {
-                keyless.push_str(item.as_str());
-            }
-        } else {
-            let sv = serde_json::from_value::<Vec<String>>(v.clone())?;
-
-            let mut item = format!("{} ", k);
-            for i in sv {
-                item.push_str(format!("{} ", i).as_str());
-            }
-            item.push('\n');
-
-            txt.push_str(item.as_str());
         }
+
+        txt += (line + "\n").as_str();
     }
 
-    txt.push_str(advanced.as_str());
-    txt.push_str(keyless.as_str());
+    txt
+}
 
-    match mobilizers {
-        Some(mobs) => {
-            for m in mobs.iter() {
-                txt.push_str(format!("mobilizer {}\n", m).as_str());
-            }
-        },
-        None => (),
+fn commands_to_txt(commands: &api::JsonCommands, stage: i32) -> Result<String, String> {
+    let mut txt = String::new();
+
+    txt += keyed_to_txt(KEY_FIRST_STAGE, stage).as_str();
+    txt += keyed_to_txt(KEY_LAST_STAGE, stage).as_str();
+
+    txt += keyed_to_txt(KEY_BASE_ITRS_SF, commands.base_interaction_scale_factor).as_str();
+    txt += keyed_to_txt("useMultithreadedComputation", commands.use_multithreaded_computation).as_str();
+    txt += keyed_to_txt("temperature", commands.temperature).as_str();
+    txt += keyed_to_txt("reportingInterval", commands.reporting_interval).as_str();
+    txt += keyed_to_txt(KEY_NUM_REP_INTVLS, commands.num_reporting_intervals).as_str();
+
+    if commands.set_default_MD_parameters {
+        txt += "setDefaultMDParameters";
+    }
+
+    txt += keyless_to_txt(&commands.sequences).as_str();
+    txt += keyless_to_txt(&commands.double_helices).as_str();
+    txt += keyless_to_txt(&commands.base_interactions).as_str();
+    txt += keyless_to_txt(&commands.ntcs).as_str();
+
+    txt += mobilizers_to_txt(&commands.mobilizers).as_str();
+    match advanced_params::to_txt(&commands.adv_params) {
+        Ok(s) => txt += s.as_str(),
+        Err(e) => return Err(e.to_string()),
     }
 
     Ok(txt)
-}
-
-pub struct ParsedRaw {
-    pub first_stage: i32,
-    pub last_stage: i32,
-    pub num_reporting_intervals: i32,
-}
-
-pub fn json_to_mapped(data: &serde_json::Value) -> Result<MappedJson, String> {
-    match serde_json::from_value::<MappedJson>(data.clone()) {
-        Ok(v) => Ok(v),
-        Err(e) => Err(e.to_string()),
-    }
 }
 
 pub fn parse_raw(raw: &str) -> Result<ParsedRaw, String> {
@@ -163,49 +155,16 @@ pub fn parse_raw(raw: &str) -> Result<ParsedRaw, String> {
     )
 }
 
-pub fn stages(mapped: &MappedJson) -> Result<Stages, String> {
-    let mut first: Option<i32> = None;
-    let mut last: Option<i32> = None;
-
-    for (k, v) in mapped {
-        if k == KEY_FIRST_STAGE {
-            let sv = match serde_json::from_value::<Vec<String>>(v.clone()) {
-                Ok(sv) => sv,
-                Err(e) => return Err(e.to_string()),
-            };
-            if sv.len() != 1 {
-                return Err(format!("Invalid vector size for {}", KEY_FIRST_STAGE));
-            }
-
-            match sv[0].parse::<i32>() {
-                Ok(v) => first = Some(v),
-                Err(e) => return Err(e.to_string()),
-            }
-        } else if k == KEY_LAST_STAGE {
-            let sv = match serde_json::from_value::<Vec<String>>(v.clone()) {
-                Ok(sv) => sv,
-                Err(e) => return Err(e.to_string()),
-            };
-            if sv.len() != 1 {
-                return Err(format!("Invalid vector size for {}", KEY_LAST_STAGE));
-            }
-
-            match sv[0].parse::<i32>() {
-                Ok(v) => last = Some(v),
-                Err(e) => return Err(e.to_string()),
-            }
-        }
-
-        if first.is_some() && last.is_some() {
-            return Ok(Stages{ first: first.unwrap(), last: last.unwrap() })
-        }
+pub fn stages(commands: &api::JsonCommands) -> Result<Stages, String> {
+    if commands.last_stage < commands.first_stage {
+        return Err(String::from("Last stage number cannot be lower than first stage"))
     }
 
-    return Err(String::from("Stages are not defined properly"));
+    Ok(Stages { first: commands.first_stage, last: commands.last_stage })
 }
 
-pub fn write(path: &PathBuf, mapped: &MappedJson, stage: i32) -> Result<(), String> {
-    let parsed = match mapped_commands_to_txt(mapped, stage) {
+pub fn write(path: &PathBuf, mapped: &api::JsonCommands, stage: i32) -> Result<(), String> {
+    let parsed = match commands_to_txt(mapped, stage) {
         Ok(parsed) => parsed,
         Err(e) => return Err(format!("Invalid MMB commands: {}", e.to_string())),
     };

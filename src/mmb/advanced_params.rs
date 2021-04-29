@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use serde_json;
 
-pub type Map = HashMap<String, serde_json::Value>;
+use crate::server::api;
 
 fn value_to_string(value: serde_json::Value) -> Result<String, serde_json::Error> {
     match serde_json::from_value::<i32>(value.clone()) {
@@ -25,18 +24,13 @@ fn value_to_string(value: serde_json::Value) -> Result<String, serde_json::Error
     serde_json::from_value::<String>(value)
 }
 
-pub fn advanced_to_string(value: serde_json::Value) -> Result<String, serde_json::Error> {
-    match serde_json::from_value::<Map>(value) {
-        Ok(map) => {
-            let mut txt = String::new();
-            for (k, v) in map.iter() {
-                match value_to_string(v.clone()) {
-                    Ok(s) => txt.push_str(format!("{} {}\n", k, s).as_str()),
-                    Err(e) => return Err(e),
-                }
-            }
-            Ok(txt)
-        },
-        Err(e) => Err(e),
+pub fn to_txt(params: &api::JsonAdvancedParameters) -> Result<String, serde_json::Error> {
+    let mut txt = String::new();
+    for (k, v) in params.iter() {
+        match value_to_string(v.clone()) {
+            Ok(s) => txt.push_str(format!("{} {}\n", k, s).as_str()),
+            Err(e) => return Err(e),
+        }
     }
+    Ok(txt)
 }

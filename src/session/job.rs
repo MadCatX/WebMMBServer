@@ -6,9 +6,9 @@ use std::process::{Child, Command};
 use std::thread;
 use std::time::Duration;
 use file_lock::FileLock;
-use serde_json;
 
 use crate::mmb;
+use crate::server::api;
 
 const CMDS_FILE_NAME: &'static str = "commands.txt";
 const PGRS_FILE_NAME: &'static str = "progress.json";
@@ -36,7 +36,7 @@ pub struct JobInfo {
 
 pub struct Job {
     pub name: String,
-    commands: Option<serde_json::Value>,
+    commands: Option<api::JsonCommands>,
     raw_commands: Option<String>,
     job_dir: PathBuf,
     cmds_path: PathBuf,
@@ -224,13 +224,8 @@ fn get_stages(path: &PathBuf, file_name: &str) -> Vec<i32> {
     stages
 }
 
-fn process_commands(commands: &serde_json::Value) -> Result<(mmb::commands::MappedJson, mmb::commands::Stages), String> {
-    let mapped = match mmb::commands::json_to_mapped(commands) {
-        Ok(v) => v,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    let stages = match mmb::commands::stages(&mapped) {
+fn process_stages(commands: &api::JsonCommands) -> Result<mmb::commands::Stages, String> {
+    let stages = match mmb::commands::stages(&commands) {
         Ok(stages) => stages,
         Err(e) => return Err(e),
     };
@@ -238,7 +233,7 @@ fn process_commands(commands: &serde_json::Value) -> Result<(mmb::commands::Mapp
         return Err(String::from("Calculation spanning over multiple stages is not supported"));
     }
 
-    Ok((mapped, stages))
+    Ok(stages)
 }
 
 fn read_mmb_progress(path: &PathBuf) -> Result<(mmb::State, i32, i32), String> {
@@ -334,7 +329,7 @@ impl Job {
         })
     }
 
-    pub fn commands(&self) -> Option<serde_json::Value> {
+    pub fn commands(&self) -> Option<api::JsonCommands> {
         self.commands.clone()
     }
 
@@ -355,11 +350,11 @@ impl Job {
         self.raw_commands.clone()
     }
 
-    pub fn create(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, commands: Option<serde_json::Value>, raw_commands: Option<String>) -> Result<Job, String> {
+    pub fn create(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, commands: Option<api::JsonCommands>, raw_commands: Option<String>) -> Result<Job, String> {
         assert!(!(commands.is_some() && raw_commands.is_some()), "Synthetic and raw commands cannot be both specified at the same time");
 
         let current_stage = if commands.is_some() {
-            let (_, stages) = process_commands(commands.as_ref().unwrap())?;
+            let stages = process_stages(commands.as_ref().unwrap())?;
             Some(stages.first)
         } else if raw_commands.is_some() {
             let parsed = mmb::commands::parse_raw(raw_commands.as_ref().unwrap())?;
@@ -463,7 +458,7 @@ impl Job {
         }
     }
 
-    pub fn start(&mut self, commands: serde_json::Value) -> Result<(), String> {
+    pub fn start(&mut self, commands: api::JsonCommands) -> Result<(), String> {
         if self.raw_commands.is_some() {
             return Err(String::from("Job created in raw commands mode cannot be run in synthetic commands mode"));
         }
@@ -475,9 +470,9 @@ impl Job {
 
         self.commands = Some(commands);
 
-        let (mapped, stages) = process_commands(self.commands.as_ref().unwrap())?;
+        let stages = process_stages(self.commands.as_ref().unwrap())?;
 
-        match mmb::commands::write(&self.cmds_path, &mapped, stages.first) {
+        match mmb::commands::write(&self.cmds_path, self.commands.as_ref().unwrap(), stages.first) {
             Ok(_) => (),
             Err(e) => return Err(e.to_string()),
         };

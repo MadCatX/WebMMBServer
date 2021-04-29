@@ -5,6 +5,7 @@ use std::sync::RwLock;
 use uuid::Uuid;
 
 use crate::mmb;
+use crate::server::api;
 use crate::session;
 use crate::session::job;
 
@@ -63,7 +64,7 @@ impl Session {
         }
     }
 
-    pub fn add_job(&self, name: String, commands: Option<serde_json::Value>) -> Result<Uuid, String> {
+    pub fn add_job(&self, name: String, commands: Option<api::JsonCommands>) -> Result<Uuid, String> {
         if self.has_job_by_name(&name) {
             return Err(format!("Job with name {} already exists", name));
         }
@@ -229,7 +230,7 @@ impl Session {
         list
     }
 
-    pub fn job_commands(&self, id: Uuid) -> Result<serde_json::Value, String> {
+    pub fn job_commands(&self, id: Uuid) -> Result<api::JsonCommands, String> {
         let data = self.data.read().unwrap();
 
         match data.jobs.get(&id) {
@@ -286,7 +287,7 @@ impl Session {
         data.is_logged_in = login_state;
     }
 
-    pub fn start_job(&self, name: String, commands: serde_json::Value) -> Result<(Uuid, job::JobInfo), String> {
+    pub fn start_job(&self, name: String, commands: api::JsonCommands) -> Result<(Uuid, job::JobInfo), String> {
         let ret = if !self.has_job_by_name(&name) {
             self.add_job(name, None)
         } else {
