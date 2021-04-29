@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use serde::Deserialize;
+use serde_derive::Deserialize;
 use serde_json;
 
 const EXAMPLE_COMMANDS_NAME: &'static str = "commands.json";

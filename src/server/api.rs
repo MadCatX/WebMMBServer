@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use rocket::http::Status;
-use serde::{Deserialize, Serialize};
+use serde_derive::{Deserialize, Serialize};
 use serde_json;
 
 /* JSON commands */

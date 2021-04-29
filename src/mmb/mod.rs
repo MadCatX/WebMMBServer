@@ -2,7 +2,7 @@ pub mod commands;
 pub mod examples;
 mod advanced_params;
 
-use serde::Deserialize;
+use serde_derive::Deserialize;
 
 pub const PARAMETERS_FILE: &'static str = "parameters.csv";
 const TRAJECTORY_FILE: &'static str = "trajectory";

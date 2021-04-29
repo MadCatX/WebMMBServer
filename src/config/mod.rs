@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::io::prelude::*;
-use serde::Deserialize;
+use serde_derive::Deserialize;
 use serde_json;
 
 fn check_dir_exists(path: &str) {
