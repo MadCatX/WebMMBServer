@@ -24,6 +24,11 @@ fn empty_job_info() -> api::JobInfo {
     }
 }
 
+fn job_commands_pruned(commands: &mut api::JsonCommands) -> &api::JsonCommands {
+    commands.extra_files.clear();
+    commands
+}
+
 fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
     api::JobInfo{
         id: session::uuid_to_str(id),
@@ -189,7 +194,10 @@ pub fn job_commands(session: Arc<Session>, data: serde_json::Value) -> ApiRespon
     };
 
     match session.job_commands(id) {
-        Ok(commands) => ApiResponse::ok(serde_json::to_value(commands).unwrap()),
+        Ok(mut commands) => {
+            let pruned = job_commands_pruned(&mut commands);
+            ApiResponse::ok(serde_json::to_value(pruned).unwrap())
+        },
         Err(e) => ApiResponse::fail(Status::BadRequest, e),
     }
 }
