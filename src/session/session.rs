@@ -31,7 +31,7 @@ fn prepare_job_dir(root: &PathBuf, id: &Uuid, params: &PathBuf) -> Result<PathBu
     match db.create(&path) {
         Ok(_) => {
             let mut param_dst_path = path.clone();
-            param_dst_path.push(mmb::PARAMETERS_FILE);
+            param_dst_path.push(mmb::PARAMS_FILE_NAME);
             match std::fs::copy(params, param_dst_path) {
                 Ok(_) => Ok(path),
                 Err(e) => Err(e.to_string()),

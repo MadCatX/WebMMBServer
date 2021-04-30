@@ -7,14 +7,16 @@ use serde_json::Result;
 
 use crate::server::api;
 
+const MAX_JSON_SIZE: u64 = 32 * 1024 * 1024;
+
 pub enum JsonParseError {
     Io(io::Error),
     Parse
 }
 
 fn transform_json(data: Data) -> Transform<Outcome<String, JsonParseError>> {
-    let mut stream = data.open().take(8192);
-        let mut string = String::with_capacity((8192 / 2) as usize);
+    let mut stream = data.open().take(MAX_JSON_SIZE);
+        let mut string = String::with_capacity((MAX_JSON_SIZE / 8) as usize);
         let outcome = match stream.read_to_string(&mut string) {
             Ok(_) => Success(string),
             Err(e) => Failure((Status::InternalServerError, JsonParseError::Io(e)))

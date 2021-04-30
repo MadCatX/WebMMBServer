@@ -13,6 +13,13 @@ pub enum BondMobility {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
+pub struct ExtraFile {
+    pub key: String,
+    pub name: String,
+    pub data: String,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Mobilizer {
     pub bond_mobility: BondMobility,
     pub chain: Option<String>,
@@ -38,6 +45,7 @@ pub struct JsonCommands {
     pub mobilizers: Vec<Mobilizer>,
     pub adv_params: JsonAdvancedParameters,
     pub set_default_MD_parameters: bool,
+    pub extra_files: Vec<ExtraFile>,
 }
 
 /* Requests */

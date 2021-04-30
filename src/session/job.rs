@@ -10,12 +10,6 @@ use file_lock::FileLock;
 use crate::mmb;
 use crate::server::api;
 
-const CMDS_FILE_NAME: &'static str = "commands.txt";
-const PGRS_FILE_NAME: &'static str = "progress.json";
-const DOUT_FILE_NAME: &'static str = "doutput.txt";
-const LAST_FRAME_FILE_PREFIX: &'static str = "last";
-const TRAJECTORY_FILE_PREFIX: &'static str = "trajectory";
-
 #[derive(Clone)]
 pub enum CommandsMode {
     Synthetic,
@@ -75,8 +69,8 @@ fn clear_stages(path: &PathBuf, stage: i32) -> Result<(), String> {
         Err(e) => return Err(e.to_string()),
     };
 
-    let traj_prefix = format!("{}.", TRAJECTORY_FILE_PREFIX);
-    let last_prefix = format!("{}.", LAST_FRAME_FILE_PREFIX);
+    let traj_prefix = format!("{}.", mmb::TRAJECTORY_FILE_PREFIX);
+    let last_prefix = format!("{}.", mmb::LAST_FRAME_FILE_PREFIX);
     for entry in dir_lister {
         if entry.is_err() {
             continue;
@@ -151,8 +145,8 @@ fn copy_job_dir(tgt: &PathBuf, src: &PathBuf) -> Result<(), String> {
             None => return Err(String::from("No file name")),
         };
 
-        if name == PGRS_FILE_NAME ||
-           name == DOUT_FILE_NAME {
+        if name == mmb::PGRS_FILE_NAME ||
+           name == mmb::DOUT_FILE_NAME {
             continue;
         }
 
@@ -296,7 +290,7 @@ impl Job {
     }
 
     pub fn available_stages(&self) -> Vec<i32> {
-        get_stages(&self.job_dir, TRAJECTORY_FILE_PREFIX)
+        get_stages(&self.job_dir, mmb::TRAJECTORY_FILE_PREFIX)
     }
 
     pub fn clone(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, src: &Job) -> Result<Job, String> {
@@ -306,13 +300,13 @@ impl Job {
         };
 
         let mut cmds_path = PathBuf::new();
-        cmds_path.push(&job_dir); cmds_path.push(CMDS_FILE_NAME);
+        cmds_path.push(&job_dir); cmds_path.push(mmb::CMDS_FILE_NAME);
 
         let mut progress_path = PathBuf::new();
-        progress_path.push(&job_dir); progress_path.push(PGRS_FILE_NAME);
+        progress_path.push(&job_dir); progress_path.push(mmb::PGRS_FILE_NAME);
 
         let mut diag_output_path = PathBuf::new();
-        diag_output_path.push(&job_dir); diag_output_path.push(DOUT_FILE_NAME);
+        diag_output_path.push(&job_dir); diag_output_path.push(mmb::DOUT_FILE_NAME);
 
         Ok(Job{
             name,
@@ -364,13 +358,13 @@ impl Job {
         };
 
         let mut cmds_path = PathBuf::new();
-        cmds_path.push(&job_dir); cmds_path.push(CMDS_FILE_NAME);
+        cmds_path.push(&job_dir); cmds_path.push(mmb::CMDS_FILE_NAME);
 
         let mut progress_path = PathBuf::new();
-        progress_path.push(&job_dir); progress_path.push(PGRS_FILE_NAME);
+        progress_path.push(&job_dir); progress_path.push(mmb::PGRS_FILE_NAME);
 
         let mut diag_output_path = PathBuf::new();
-        diag_output_path.push(&job_dir); diag_output_path.push(DOUT_FILE_NAME);
+        diag_output_path.push(&job_dir); diag_output_path.push(mmb::DOUT_FILE_NAME);
 
         Ok(Job{
             name,
@@ -452,7 +446,7 @@ impl Job {
     }
 
     pub fn last_available_stage(&self) -> Option<i32> {
-        match get_stages(&self.job_dir, TRAJECTORY_FILE_PREFIX).last() {
+        match get_stages(&self.job_dir, mmb::TRAJECTORY_FILE_PREFIX).last() {
             Some(v) => Some(*v),
             None => None
         }
@@ -478,6 +472,11 @@ impl Job {
         };
 
         match clear_stages(&self.job_dir, stages.first) {
+            Ok(()) => (),
+            Err(e) => return Err(e),
+        };
+
+        match mmb::extra_files::write(&self.commands.as_ref().unwrap().extra_files, &self.job_dir) {
             Ok(()) => (),
             Err(e) => return Err(e),
         };
