@@ -24,7 +24,7 @@ fn empty_job_info() -> api::JobInfo {
     }
 }
 
-fn job_commands_pruned(commands: &mut api::JsonCommands) -> &api::JsonCommands {
+fn job_commands_pruned(mut commands: api::JsonCommands) -> api::JsonCommands {
     commands.extra_files.clear();
     commands
 }
@@ -42,6 +42,7 @@ fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
         commands_mode: match info.commands_mode {
             session::job::CommandsMode::Synthetic => api::JobCommandsMode::Synthetic,
             session::job::CommandsMode::Raw => api::JobCommandsMode::Raw,
+            session::job::CommandsMode::None => api::JobCommandsMode::None,
         },
     }
 }
@@ -77,6 +78,7 @@ fn step_to_str(step: i32) -> String {
 }
 
 pub fn activate_example(session: Arc<Session>, data: serde_json::Value, path: PathBuf) -> ApiResponse {
+    /*
     let parsed = match serde_json::from_value::<api::SimpleJobRqData>(data) {
         Ok(v) => v,
         Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
@@ -92,7 +94,7 @@ pub fn activate_example(session: Arc<Session>, data: serde_json::Value, path: Pa
         Err(e) => return ApiResponse::fail(Status::InternalServerError, e.to_string()),
     };
 
-    let id = match session.add_job(parsed.id, Some(cmds_json)) {
+    let id = match session.create_job(parsed.id, Some(cmds_json)) {
         Ok(v) => v,
         Err(e) => return ApiResponse::fail(Status::InternalServerError, e),
     };
@@ -107,6 +109,9 @@ pub fn activate_example(session: Arc<Session>, data: serde_json::Value, path: Pa
         },
         None => ApiResponse::fail(Status::InternalServerError, format!("Job id {} is unknown", id)),
     }
+    */
+
+    ApiResponse::fail(Status::ServiceUnavailable, String::from("Temporarily disabled"))
 }
 
 pub fn clone_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
@@ -133,6 +138,33 @@ pub fn clone_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
             Err(e) => ApiResponse::fail(Status::InternalServerError, e),
         },
         None => ApiResponse::fail(Status::InternalServerError, format!("Job id {} is unknown", id)),
+    }
+}
+
+pub fn create_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let parsed = match serde_json::from_value::<api::CreateJobRqData>(data) {
+        Ok(v) => v,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+    };
+
+    if session.has_job_by_name(&parsed.name) {
+        return ApiResponse::fail(Status::BadRequest, format!("Job named {} already exists", parsed.name));
+    }
+
+    match session.create_job(parsed.name) {
+        Ok(id) => {
+            match session.job_info(id) {
+                Some(v) => match v {
+                    Ok(info) => {
+                        let resp = job_info_to_api(&id, info);
+                        return ApiResponse::ok(serde_json::to_value(resp).unwrap());
+                    },
+                    Err(e) => return ApiResponse::fail(Status::InternalServerError, e),
+                },
+                None => ApiResponse::fail(Status::InternalServerError, format!("Job id {} is unknown", id)),
+            }
+        },
+        Err(e) => ApiResponse::fail(Status::InternalServerError, e),
     }
 }
 
@@ -194,9 +226,18 @@ pub fn job_commands(session: Arc<Session>, data: serde_json::Value) -> ApiRespon
     };
 
     match session.job_commands(id) {
-        Ok(mut commands) => {
-            let pruned = job_commands_pruned(&mut commands);
-            ApiResponse::ok(serde_json::to_value(pruned).unwrap())
+        Ok(v) => {
+            match v {
+                Some(commands) => {
+                    let pruned = job_commands_pruned(commands);
+                    let resp = api::JobCommands{is_empty: false, commands: Some(pruned)};
+                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                },
+                None => {
+                    let resp = api::JobCommands{is_empty: true, commands: None};
+                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                }
+            }
         },
         Err(e) => ApiResponse::fail(Status::BadRequest, e),
     }
@@ -209,7 +250,18 @@ pub fn job_commands_raw(session: Arc<Session>, data: serde_json::Value) -> ApiRe
     };
 
     match session.job_commands_raw(id) {
-        Ok(commands) => ApiResponse::ok(serde_json::to_value(commands).unwrap()),
+        Ok(v) => {
+            match v {
+                Some(commands) => {
+                    let resp = api::JobCommandsRaw{is_empty: false, commands: Some(commands)};
+                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                },
+                None => {
+                    let resp = api::JobCommandsRaw{is_empty: true, commands: None};
+                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                }
+            }
+        },
         Err(e) => ApiResponse::fail(Status::BadRequest, e),
     }
 }
@@ -264,7 +316,11 @@ pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
     }
 
     let start_data = parsed.unwrap();
-    match session.start_job(start_data.name, start_data.commands) {
+    let id = match Uuid::parse_str(&start_data.id) {
+        Ok(v) => v,
+        Err(_) => return ApiResponse::fail(Status::BadRequest, String::from("Malformed job id")),
+    };
+    match session.start_job(&id, start_data.commands) {
         Ok((id, info)) => {
             let resp = job_info_to_api(&id, info);
             ApiResponse::ok(serde_json::to_value(resp).unwrap())
@@ -280,7 +336,11 @@ pub fn start_job_raw(session: Arc<Session>, data: serde_json::Value) -> ApiRespo
     }
 
     let start_data_raw = parsed.unwrap();
-    match session.start_job_raw(start_data_raw.name, start_data_raw.commands) {
+    let id = match Uuid::parse_str(&start_data_raw.id) {
+        Ok(v) => v,
+        Err(_) => return ApiResponse::fail(Status::BadRequest, String::from("Malformed job id")),
+    };
+    match session.start_job_raw(&id, start_data_raw.commands) {
         Ok((id, info)) => {
             let resp = job_info_to_api(&id, info);
             ApiResponse::ok(serde_json::to_value(resp).unwrap())
@@ -311,5 +371,28 @@ pub fn stop_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
             }
         },
         Err(e) => ApiResponse::fail(Status::BadRequest, e),
+    }
+}
+
+pub fn upload_file(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let parsed: serde_json::Result<api::UploadFileData> = serde_json::from_value(data);
+    if parsed.is_err() {
+        return ApiResponse::fail(Status::BadRequest, String::from("Invalid upload file request"));
+    }
+
+    let data = parsed.unwrap();
+    println!("Type: {}\nData: {}\n", data.req_type, data.data);
+
+    let empty = api::Empty{};
+    ApiResponse::ok(serde_json::to_value(empty).unwrap())
+}
+
+impl std::fmt::Display for api::UploadFileRequestType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return match self {
+            api::UploadFileRequestType::Start => write!(f, "Start"),
+            api::UploadFileRequestType::Continue => write!(f, "Continue"),
+            api::UploadFileRequestType::Finish => write!(f, "Finish"),
+        }
     }
 }

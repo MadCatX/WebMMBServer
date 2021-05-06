@@ -12,6 +12,7 @@ use crate::server::api;
 
 #[derive(Clone)]
 pub enum CommandsMode {
+    None,
     Synthetic,
     Raw,
 }
@@ -337,7 +338,7 @@ impl Job {
             return CommandsMode::Raw;
         }
 
-        panic!("Neither synthetic nor raw commands have been set");
+        CommandsMode::None
     }
 
     pub fn commands_raw(&self) -> Option<String> {

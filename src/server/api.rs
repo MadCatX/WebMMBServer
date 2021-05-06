@@ -27,6 +27,13 @@ pub struct Mobilizer {
     pub last_residue: Option<i32>,
 }
 
+#[derive(Deserialize)]
+pub enum UploadFileRequestType {
+    Start,
+    Continue,
+    Finish,
+}
+
 pub type JsonAdvancedParameters = HashMap<String, serde_json::Value>;
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -61,6 +68,7 @@ pub enum ApiRequest {
     StartJob(ApiRequestData),
     StartJobRaw(ApiRequestData),
     StopJob(ApiRequestData),
+    CreateJob(ApiRequestData),
     DeleteJob(ApiRequestData),
     JobStatus(ApiRequestData),
     ListJobs(ApiRequestData),
@@ -71,6 +79,7 @@ pub enum ApiRequest {
     CloneJob(ApiRequestData),
     ListExamples(ApiRequestData),
     ActivateExample(ApiRequestData),
+    UploadFile(ApiRequestData),
 }
 
 #[derive(Deserialize)]
@@ -92,6 +101,11 @@ pub struct CloneJobRqData {
 }
 
 #[derive(Deserialize)]
+pub struct CreateJobRqData {
+    pub name: String,
+}
+
+#[derive(Deserialize)]
 pub struct SimpleJobRqData {
     pub id: String,
 }
@@ -103,13 +117,20 @@ pub struct ResumeJobRqData {
 }
 #[derive(Deserialize)]
 pub struct StartJobRqData {
-    pub name: String,
+    pub id: String,
     pub commands: JsonCommands,
 }
 #[derive(Deserialize)]
 pub struct StartJobRawRqData {
-    pub name: String,
+    pub id: String,
     pub commands: String,
+}
+#[derive(Deserialize)]
+pub struct UploadFileData {
+    pub req_type: UploadFileRequestType,
+    pub job_name: String,
+    pub file_name: String,
+    pub data: String,
 }
 
 /* Responses */
@@ -135,6 +156,7 @@ pub enum JobState {
 
 #[derive(Serialize)]
 pub enum JobCommandsMode {
+    None,
     Synthetic,
     Raw,
 }
@@ -162,6 +184,18 @@ pub struct ExampleListItem {
 }
 
 pub type ExampleList = Vec<ExampleListItem>;
+
+#[derive(Serialize)]
+pub struct JobCommands {
+    pub is_empty: bool,
+    pub commands: Option<JsonCommands>,
+}
+
+#[derive(Serialize)]
+pub struct JobCommandsRaw {
+    pub is_empty: bool,
+    pub commands: Option<String>,
+}
 
 #[derive(Serialize)]
 pub struct JobInfo {

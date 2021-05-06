@@ -64,35 +64,10 @@ impl Session {
         }
     }
 
-    pub fn add_job(&self, name: String, commands: Option<api::JsonCommands>) -> Result<Uuid, String> {
-        if self.has_job_by_name(&name) {
-            return Err(format!("Job with name {} already exists", name));
+    pub fn create_job(&self, name: String) -> Result<Uuid, String> {
+        if name.len() < 1 {
+            return Err(String::from("Job must have a name"));
         }
-
-        let id = Uuid::new_v4();
-
-        match prepare_job_dir(&self.jobs_dir, &id, &self.mmb_parameters_path) {
-            Ok(job_dir) => {
-                match job::Job::create(
-                    name,
-                    self.mmb_exec_path.clone(),
-                    job_dir,
-                    commands,
-                    None
-                ) {
-                    Ok(job) => {
-                        let mut data = self.data.write().unwrap();
-                        data.jobs.insert(id, job);
-                        Ok(id)
-                    },
-                    Err(e) => Err(e),
-                }
-            },
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    fn add_job_raw(&self, name: String, raw_commands: Option<String>) -> Result<Uuid, String> {
         if self.has_job_by_name(&name) {
             return Err(format!("Job with name {} already exists", name));
         }
@@ -106,7 +81,7 @@ impl Session {
                     self.mmb_exec_path.clone(),
                     job_dir,
                     None,
-                    raw_commands
+                    None
                 ) {
                     Ok(job) => {
                         let mut data = self.data.write().unwrap();
@@ -210,15 +185,6 @@ impl Session {
         data.is_logged_in
     }
 
-    pub fn job_name_to_id(&self, name: &String) -> Option<Uuid> {
-        for (id, job) in &self.data.read().unwrap().jobs {
-            if job.name == *name {
-                return Some(*id);
-            }
-        }
-        None
-    }
-
     pub fn list_jobs(&self) -> Vec<(Uuid, Result<job::JobInfo, String>)> {
         let mut data = self.data.write().unwrap();
 
@@ -230,26 +196,20 @@ impl Session {
         list
     }
 
-    pub fn job_commands(&self, id: Uuid) -> Result<api::JsonCommands, String> {
+    pub fn job_commands(&self, id: Uuid) -> Result<Option<api::JsonCommands>, String> {
         let data = self.data.read().unwrap();
 
         match data.jobs.get(&id) {
-            Some(job) => match job.commands() {
-                Some(cmds) => Ok(cmds),
-                None => Err(String::from("No synthetic commands, the job may have been started with raw commands")),
-            },
+            Some(job) => Ok(job.commands()),
             None => Err(String::from("Unknown job id")),
         }
     }
 
-    pub fn job_commands_raw(&self, id: Uuid) -> Result<String, String> {
+    pub fn job_commands_raw(&self, id: Uuid) -> Result<Option<String>, String> {
         let data = self.data.read().unwrap();
 
         match data.jobs.get(&id) {
-            Some(job) => match job.commands_raw() {
-                Some(cmds) => Ok(cmds),
-                None => Err(String::from("No raw commands, the job may have been started with synthetic commands")),
-            },
+            Some(job) => Ok(job.commands_raw()),
             None => Err(String::from("Unknown job id")),
         }
     }
@@ -287,27 +247,17 @@ impl Session {
         data.is_logged_in = login_state;
     }
 
-    pub fn start_job(&self, name: String, commands: api::JsonCommands) -> Result<(Uuid, job::JobInfo), String> {
-        let ret = if !self.has_job_by_name(&name) {
-            self.add_job(name, None)
-        } else {
-            match self.job_name_to_id(&name) {
-                Some(id) => Ok(id),
-                None => Err(format!("No job with name {} exists", name)),
-            }
-        };
-
-        let id = match ret {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+    pub fn start_job(&self, id: &Uuid, commands: api::JsonCommands) -> Result<(Uuid, job::JobInfo), String> {
+        if !self.has_job(id) {
+            return Err(format!("Job with id {} does not exist", id));
+        }
 
         let mut data = self.data.write().unwrap();
         let job = data.jobs.get_mut(&id).unwrap();
         match job.start(commands) {
             Ok(()) => {
                 match job.info() {
-                    Ok(info) => Ok((id, info)),
+                    Ok(info) => Ok((*id, info)),
                     Err(e) => Err(e),
                 }
             },
@@ -315,27 +265,17 @@ impl Session {
         }
     }
 
-    pub fn start_job_raw(&self, name: String, raw_commands: String) -> Result<(Uuid, job::JobInfo), String> {
-        let ret = if !self.has_job_by_name(&name) {
-            self.add_job_raw(name, None)
-        } else {
-            match self.job_name_to_id(&name) {
-                Some(id) => Ok(id),
-                None => Err(format!("No job with name {} exists", name)),
-            }
-        };
-
-        let id = match ret {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+    pub fn start_job_raw(&self, id: &Uuid, raw_commands: String) -> Result<(Uuid, job::JobInfo), String> {
+        if !self.has_job(id) {
+            return Err(format!("Job with id {} does not exist", id));
+        }
 
         let mut data = self.data.write().unwrap();
         let job = data.jobs.get_mut(&id).unwrap();
         match job.start_raw(raw_commands) {
             Ok(()) => {
                 match job.info() {
-                    Ok(info) => Ok((id, info)),
+                    Ok(info) => Ok((*id, info)),
                     Err(e) => Err(e),
                 }
             },

@@ -191,6 +191,7 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
         api::ApiRequest::StartJob(v) => Ok(request_handlers::start_job(s, v.data)),
         api::ApiRequest::StartJobRaw(v) => Ok(request_handlers::start_job_raw(s, v.data)),
         api::ApiRequest::StopJob(v) => Ok(request_handlers::stop_job(s, v.data)),
+        api::ApiRequest::CreateJob(v) => Ok(request_handlers::create_job(s, v.data)),
         api::ApiRequest::DeleteJob(v) => Ok(request_handlers::delete_job(s, v.data)),
         api::ApiRequest::CloneJob(v) => Ok(request_handlers::clone_job(s, v.data)),
         api::ApiRequest::JobStatus(v) => Ok(request_handlers::job_status(s, v.data)),
@@ -201,6 +202,7 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
         api::ApiRequest::SessionInfo(_) => Ok(request_handlers::session_info(s)),
         api::ApiRequest::ListExamples(_) => Ok(request_handlers::list_examples(state.examples_dir.clone())),
         api::ApiRequest::ActivateExample(v) => Ok(request_handlers::activate_example(s, v.data, state.examples_dir.clone())),
+        api::ApiRequest::UploadFile(v) => Ok(request_handlers::upload_file(s, v.data)),
     }
 }
 
