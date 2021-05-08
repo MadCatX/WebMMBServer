@@ -78,7 +78,6 @@ fn step_to_str(step: i32) -> String {
 }
 
 pub fn activate_example(session: Arc<Session>, data: serde_json::Value, path: PathBuf) -> ApiResponse {
-    /*
     let parsed = match serde_json::from_value::<api::SimpleJobRqData>(data) {
         Ok(v) => v,
         Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
@@ -94,7 +93,7 @@ pub fn activate_example(session: Arc<Session>, data: serde_json::Value, path: Pa
         Err(e) => return ApiResponse::fail(Status::InternalServerError, e.to_string()),
     };
 
-    let id = match session.create_job(parsed.id, Some(cmds_json)) {
+    let id = match session.create_job(parsed.id, Some(cmds_json), None) {
         Ok(v) => v,
         Err(e) => return ApiResponse::fail(Status::InternalServerError, e),
     };
@@ -109,9 +108,6 @@ pub fn activate_example(session: Arc<Session>, data: serde_json::Value, path: Pa
         },
         None => ApiResponse::fail(Status::InternalServerError, format!("Job id {} is unknown", id)),
     }
-    */
-
-    ApiResponse::fail(Status::ServiceUnavailable, String::from("Temporarily disabled"))
 }
 
 pub fn clone_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
@@ -151,7 +147,7 @@ pub fn create_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
         return ApiResponse::fail(Status::BadRequest, format!("Job named {} already exists", parsed.name));
     }
 
-    match session.create_job(parsed.name) {
+    match session.create_job(parsed.name, None, None) {
         Ok(id) => {
             match session.job_info(id) {
                 Some(v) => match v {

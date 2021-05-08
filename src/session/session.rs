@@ -64,7 +64,9 @@ impl Session {
         }
     }
 
-    pub fn create_job(&self, name: String) -> Result<Uuid, String> {
+    pub fn create_job(&self, name: String, synthetic_commands: Option<api::JsonCommands>, raw_commands: Option<String>) -> Result<Uuid, String> {
+        assert!(!(synthetic_commands.is_some() && raw_commands.is_some()));
+
         if name.len() < 1 {
             return Err(String::from("Job must have a name"));
         }
@@ -80,8 +82,8 @@ impl Session {
                     name,
                     self.mmb_exec_path.clone(),
                     job_dir,
-                    None,
-                    None
+                    synthetic_commands,
+                    raw_commands
                 ) {
                     Ok(job) => {
                         let mut data = self.data.write().unwrap();
