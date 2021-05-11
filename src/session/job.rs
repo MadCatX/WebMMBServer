@@ -1,11 +1,13 @@
 use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
+use std::{collections::HashMap, io::Write};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use file_lock::FileLock;
+use uuid::Uuid;
 
 use crate::mmb;
 use crate::server::api;
@@ -15,6 +17,12 @@ pub enum CommandsMode {
     None,
     Synthetic,
     Raw,
+}
+
+struct FileTransfer {
+    pub fh: std::fs::File,
+    pub file_name: String,
+    pub last_activity: SystemTime,
 }
 
 #[derive(Clone)]
@@ -40,7 +48,10 @@ pub struct Job {
     diag_output_path: PathBuf,
     current_stage: Option<i32>,
     mmb_process: Option<Child>,
-    created_on: std::time::SystemTime,
+    created_on: SystemTime,
+    file_transfers: HashMap<Uuid, FileTransfer>,
+    additional_files: Vec<String>,
+    file_transfer_timeout: Duration,
 }
 
 fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
@@ -295,6 +306,10 @@ impl Job {
     }
 
     pub fn clone(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, src: &Job) -> Result<Job, String> {
+        if !src.file_transfers.is_empty() {
+            return Err(String::from("Jobs with active file transfers cannot be cloned"));
+        }
+
         match copy_job_dir(&job_dir, &src.job_dir) {
             Ok(_) => (),
             Err(e) => return Err(e),
@@ -320,7 +335,10 @@ impl Job {
             diag_output_path,
             current_stage: src.current_stage,
             mmb_process: None,
-            created_on: std::time::SystemTime::now(),
+            created_on: SystemTime::now(),
+            file_transfers: HashMap::new(),
+            additional_files: src.additional_files.clone(),
+            file_transfer_timeout: src.file_transfer_timeout.clone(),
         })
     }
 
@@ -379,7 +397,20 @@ impl Job {
             current_stage,
             mmb_process: None,
             created_on: std::time::SystemTime::now(),
+            file_transfers: HashMap::new(),
+            additional_files: Vec::new(),
+            file_transfer_timeout: Duration::new(30, 0),
         })
+    }
+
+    pub fn finish_upload(&mut self, id: Uuid) -> Result<(), String> {
+        if !self.file_transfers.contains_key(&id) {
+            return Err(String::from("No such transfer"));
+        }
+
+        let xfr = self.file_transfers.remove(&id).unwrap();
+        self.additional_files.push(xfr.file_name);
+        Ok(())
     }
 
     pub fn info(&mut self) -> Result<JobInfo, String> {
@@ -446,6 +477,43 @@ impl Job {
         }
     }
 
+    pub fn init_upload(&mut self, file_name: String) -> Result<Uuid, String> {
+        let id = Uuid::new_v4();
+
+        if self.file_transfers.contains_key(&id) {
+            return Err(String::from("File transfer with such id already exists"));
+        }
+
+        for v in self.file_transfers.values() {
+            if v.file_name == file_name {
+                return Err(String::from("Transfer with such file name already exists"));
+            }
+        }
+
+        if mmb::additional_files::is_reserved_file_name(&file_name) {
+            return Err(String::from("Filename is reserved"));
+        }
+
+        let mut path = self.job_dir.clone();
+        path.push(&file_name);
+
+        let fh = match std::fs::File::create(path) {
+            Ok(fh) => fh,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        self.file_transfers.insert(
+            id,
+            FileTransfer{
+                fh,
+                file_name,
+                last_activity: SystemTime::now(),
+            }
+        );
+
+        Ok(id)
+    }
+
     pub fn last_available_stage(&self) -> Option<i32> {
         match get_stages(&self.job_dir, mmb::TRAJECTORY_FILE_PREFIX).last() {
             Some(v) => Some(*v),
@@ -473,11 +541,6 @@ impl Job {
         };
 
         match clear_stages(&self.job_dir, stages.first) {
-            Ok(()) => (),
-            Err(e) => return Err(e),
-        };
-
-        match mmb::extra_files::write(&self.commands.as_ref().unwrap().extra_files, &self.job_dir) {
             Ok(()) => (),
             Err(e) => return Err(e),
         };
@@ -598,6 +661,48 @@ impl Job {
             Err(e) => return Err(e),
         }
     }
+
+    pub fn terminate_hung_uploads(&mut self) {
+        let mut to_terminate = Vec::<Uuid>::new();
+
+        for (k, xfr) in self.file_transfers.iter() {
+            match SystemTime::now().duration_since(xfr.last_activity) {
+                Ok(dt) => {
+                    if dt > self.file_transfer_timeout {
+                        to_terminate.push(*k);
+                    }
+                },
+                Err(e) => panic!("{}", e.to_string().as_str()),
+            }
+        }
+
+        for item in to_terminate.iter() {
+            self.terminate_transfer(item);
+        }
+    }
+
+    pub fn upload_chunk(&mut self, transfer_id: &Uuid, chunk: Vec<u8>) -> Result<(), String> {
+        match self.file_transfers.get_mut(transfer_id) {
+            Some(xfr) => match xfr.fh.write(&chunk) {
+                Ok(_) => {
+                    xfr.last_activity = SystemTime::now();
+                    Ok(())
+                },
+                Err(e) => Err(format!("Failed to write file: {}", e.to_string())),
+            },
+            None => Err(String::from("No such transfer")),
+        }
+    }
+
+    fn terminate_transfer(&mut self, id: &Uuid) {
+        let file_name = self.file_transfers.remove(id).unwrap().file_name;
+
+        let mut path = self.job_dir.clone();
+        path.push(&file_name);
+        std::fs::remove_file(path);
+
+        println!("Terminating hung transfer of file \"{}\"", file_name);
+    }
 }
 
 impl Drop for Job {
@@ -606,6 +711,11 @@ impl Drop for Job {
             Some(p) => assert!(p.try_wait().is_ok()),
             None => {},
         };
+
+        let xfr_ids: Vec<Uuid> = self.file_transfers.keys().map(|&id| id.clone()).collect();
+        for id in xfr_ids {
+            self.terminate_transfer(&id);
+        }
 
         std::fs::remove_dir_all(&self.job_dir);
         println!("Job dropped");

@@ -47,13 +47,14 @@ impl Session {
         db.recursive(false);
         match db.create(&jobs_dir) {
             Ok(_) => {
-                Ok(Session {
-                    data: RwLock::new(
-                        SessionData {
-                            jobs: HashMap::new(),
-                            is_logged_in,
-                        }
-                    ),
+                let data = RwLock::new(SessionData{
+                        jobs: HashMap::new(),
+                        is_logged_in,
+                    }
+                );
+
+                Ok(Session{
+                    data,
                     id,
                     mmb_exec_path,
                     mmb_parameters_path,
@@ -162,6 +163,15 @@ impl Session {
         }
     }
 
+    pub fn finish_upload(&self, job_id: Uuid, transfer_id: Uuid) -> Result<(), String> {
+        let mut data = self.data.write().unwrap();
+
+        match data.jobs.get_mut(&job_id) {
+            Some(job) => job.finish_upload(transfer_id),
+            None => Err(String::from("No such job"))
+        }
+    }
+
     pub fn has_job(&self, id: &Uuid) -> bool {
         self.data.read().unwrap().jobs.contains_key(id)
     }
@@ -179,6 +189,15 @@ impl Session {
 
     pub fn id(&self) -> Uuid {
         self.id.clone()
+    }
+
+    pub fn init_upload(&self, id: &Uuid, file_name: String) -> Result<Uuid, String> {
+        let mut data = self.data.write().unwrap();
+
+        match data.jobs.get_mut(id) {
+            Some(job) => job.init_upload(file_name),
+            None => Err(String::from("No such job"))
+        }
     }
 
     pub fn is_logged_in(&self) -> bool {
@@ -290,6 +309,23 @@ impl Session {
 
         match data.jobs.get_mut(&id) {
             Some(job) => return job.stop(),
+            None => return Err(String::from("No such job")),
+        }
+    }
+
+    pub fn terminate_hung_uploads(&self) {
+        let mut data = self.data.write().unwrap();
+
+        for job in data.jobs.values_mut() {
+            job.terminate_hung_uploads();
+        }
+    }
+
+    pub fn upload_chunk(&self, job_id: &Uuid, transfer_id: &Uuid, chunk: Vec<u8>) -> Result<(), String> {
+        let mut data = self.data.write().unwrap();
+
+        match data.jobs.get_mut(job_id) {
+            Some(job) => job.upload_chunk(transfer_id, chunk),
             None => return Err(String::from("No such job")),
         }
     }

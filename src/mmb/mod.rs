@@ -1,7 +1,8 @@
 pub mod commands;
 pub mod examples;
-pub mod extra_files;
+pub mod additional_files;
 mod advanced_params;
+mod transfer_chunk;
 
 use serde_derive::Deserialize;
 

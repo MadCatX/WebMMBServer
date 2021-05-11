@@ -17,6 +17,7 @@ use crate::server::request_handlers;
 use crate::server::responders::{PdbFile, WMSError};
 use crate::session::session::Session;
 use crate::server::session_cookie;
+use crate::server::transfer_handlers;
 
 struct AppState {
     pub sm: RwLock<SessionManager>,
@@ -132,12 +133,10 @@ fn auth_verify(auth: api::AuthRequest, mut cookies: Cookies, state: State<AppSta
             }
         },
         api::AuthRequest::LogOut(_) => {
-            match get_session_authorized(&mut cookies, &state) {
-                Some(s) => {
-                    s.set_login_state(false);
-                },
-                None => {},
-            }
+            match session_cookie::get_session_id(&mut cookies) {
+                Some(sid) => state.sm.write().unwrap().destroy_session(&sid),
+                None => (),
+            };
             session_cookie::remove_session_cookie(&mut cookies);
             api::AuthResponse{ status: Status::Ok, message: String::new() }
         }
@@ -202,8 +201,18 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
         api::ApiRequest::SessionInfo(_) => Ok(request_handlers::session_info(s)),
         api::ApiRequest::ListExamples(_) => Ok(request_handlers::list_examples(state.examples_dir.clone())),
         api::ApiRequest::ActivateExample(v) => Ok(request_handlers::activate_example(s, v.data, state.examples_dir.clone())),
-        api::ApiRequest::UploadFile(v) => Ok(request_handlers::upload_file(s, v.data)),
+        api::ApiRequest::FileTransfer(v) => Ok(request_handlers::file_transfer(s, v.data)),
     }
+}
+
+#[post("/xfr", format = "application/octet-stream", data = "<req>")]
+fn xfr(req: api::TransferChunk, mut cookies: Cookies, state: State<AppState>) -> Result<api::ApiResponse, WMSError> {
+    let s = match get_session_authorized(&mut cookies, &state) {
+        Some(s) => s,
+        None => return Err(WMSError{status: Status::Forbidden}),
+    };
+
+    Ok(transfer_handlers::chunk(s, req))
 }
 
 #[get("/structure/<session_id>/<job_id>/<stage>", rank = 1)]
@@ -254,7 +263,19 @@ pub fn start(cfg: Arc<Config>) {
         .expect("Server configuration is invalid");
 
     rocket::custom(srv_cfg)
-        .mount("/", routes![index, index_authorized, auth_page, auth_already_authenticated, auth_verify, static_files, api, structure])
+        .mount("/",
+               routes![
+                   index,
+                   index_authorized,
+                   auth_page,
+                   auth_already_authenticated,
+                   auth_verify,
+                   static_files,
+                   api,
+                   structure,
+                   xfr
+               ]
+        )
         .manage(AppState{
             sm: RwLock::new(SessionManager::create(cfg.clone())),
             jobs_dir: PathBuf::from(cfg.jobs_dir.as_str()),

@@ -4,6 +4,7 @@ mod request_handlers;
 mod responders;
 mod server;
 mod session_cookie;
+mod transfer_handlers;
 
 use std::sync::Arc;
 

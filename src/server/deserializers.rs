@@ -7,7 +7,8 @@ use serde_json::Result;
 
 use crate::server::api;
 
-const MAX_JSON_SIZE: u64 = 32 * 1024 * 1024;
+const MAX_JSON_SIZE: u64 = 1024;
+const MAX_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 
 pub enum JsonParseError {
     Io(io::Error),
@@ -74,50 +75,29 @@ impl<'a> FromData<'a> for api::AuthRequest {
         }
     }
 }
-/*
-impl<'a> FromData<'a> for JobQuery {
-    type Error = JsonParseError;
-    type Owned = String;
-    type Borrowed = str;
 
-    fn transform(_: &Request, data: Data) -> Transform<Outcome<Self::Owned, Self::Error>> {
-        transform_json(data)
+impl<'a> FromData<'a> for api::TransferChunk {
+    type Error = String;
+    type Owned = Vec<u8>;
+    type Borrowed = Vec<u8>;
+
+    fn transform(_request: &Request, data: Data) -> Transform<Outcome<Self::Owned, Self::Error>> {
+        let mut stream = data.open().take(MAX_CHUNK_SIZE);
+        let mut buf = Vec::<u8>::with_capacity(MAX_CHUNK_SIZE as usize);
+        let outcome = match stream.read_to_end(&mut buf) {
+            Ok(_) => Success(buf),
+            Err(e) => Failure((Status::InternalServerError, format!("Cannot read request data: {}", e.to_string()))),
+        };
+
+        Transform::Borrowed(outcome)
     }
 
     fn from_data(_: &Request, outcome: Transformed<'a, Self>) -> Outcome<Self, Self::Error> {
-        let s = outcome.borrowed()?;
+        let buf = outcome.borrowed()?;
 
-        println!("{}", s);
-
-        let parsed: Result<JobQuery> = serde_json::from_str(s);
-        match parsed {
-            Ok(parsed) => Success(parsed),
-            Err(e) => Failure((Status::UnprocessableEntity, JsonParseError::Parse))
+        match api::TransferChunk::from_bytes(&buf) {
+            Ok(chunk) => Success(chunk),
+            Err(e) => Failure((Status::BadRequest, e)),
         }
     }
 }
-
-impl<'a> FromData<'a> for MmbCommands {
-    type Error = JsonParseError;
-    type Owned = String;
-    type Borrowed = str;
-
-    fn transform(_: &Request, data: Data) -> Transform<Outcome<Self::Owned, Self::Error>> {
-        transform_json(data)
-    }
-
-    fn from_data(_: &Request, outcome: Transformed<'a, Self>) -> Outcome<Self, Self::Error> {
-        let s = outcome.borrowed()?;
-
-        println!("COMMANDS: {}", s);
-        let parsed: Result<HashMap<String, Vec<String>>> = serde_json::from_str(s);
-        match parsed {
-            Ok(parsed) => Success(MmbCommands{tokens: parsed}),
-            Err(e) => {
-                println!("{}", e);
-                return Failure((Status::UnprocessableEntity, JsonParseError::Parse))
-            }
-        }
-    }
-}
-*/

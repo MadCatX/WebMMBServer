@@ -1,10 +1,10 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 use std::sync::Arc;
 use rocket::http::Status;
 use serde_json;
 use uuid::Uuid;
 
-use crate::mmb;
+use crate::{mmb, session::uuid_to_str};
 use crate::session;
 use crate::session::session::Session;
 use crate::server::api;
@@ -175,6 +175,42 @@ pub fn delete_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
         return ApiResponse::ok(serde_json::to_value(resp).unwrap());
     } else {
         return ApiResponse::fail(Status::BadRequest, String::from("No job to delete"));
+    }
+}
+
+pub fn file_transfer(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let parsed: serde_json::Result<api::FileTransferRqData> = serde_json::from_value(data);
+    if parsed.is_err() {
+        return ApiResponse::fail(Status::BadRequest, String::from("Invalid upload file request"));
+    }
+
+    let data = parsed.unwrap();
+    let job_id = match Uuid::from_str(data.job_id.as_str()) {
+        Ok(id) => id,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+    };
+
+    match data.req_type {
+        api::FileTransferRequestType::Init => {
+            match session.init_upload(&job_id, data.file_name) {
+                Ok(id) => {
+                    let resp = api::FileTranferInfo{id: uuid_to_str(&id)};
+                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                },
+                Err(e) => ApiResponse::fail(Status::BadRequest, e)
+            }
+        },
+        api::FileTransferRequestType::Finish => {
+            let transfer_id = match Uuid::from_str(data.transfer_id.as_str()) {
+                Ok(id) => id,
+                Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+            };
+
+            match session.finish_upload(job_id, transfer_id) {
+                Ok(()) => ApiResponse::ok(serde_json::to_value(api::Empty{}).unwrap()),
+                Err(e) => ApiResponse::fail(Status::BadRequest, e),
+            }
+        }
     }
 }
 
@@ -367,28 +403,5 @@ pub fn stop_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
             }
         },
         Err(e) => ApiResponse::fail(Status::BadRequest, e),
-    }
-}
-
-pub fn upload_file(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
-    let parsed: serde_json::Result<api::UploadFileData> = serde_json::from_value(data);
-    if parsed.is_err() {
-        return ApiResponse::fail(Status::BadRequest, String::from("Invalid upload file request"));
-    }
-
-    let data = parsed.unwrap();
-    println!("Type: {}\nData: {}\n", data.req_type, data.data);
-
-    let empty = api::Empty{};
-    ApiResponse::ok(serde_json::to_value(empty).unwrap())
-}
-
-impl std::fmt::Display for api::UploadFileRequestType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return match self {
-            api::UploadFileRequestType::Start => write!(f, "Start"),
-            api::UploadFileRequestType::Continue => write!(f, "Continue"),
-            api::UploadFileRequestType::Finish => write!(f, "Finish"),
-        }
     }
 }

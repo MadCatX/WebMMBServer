@@ -19,19 +19,18 @@ pub struct ExtraFile {
     pub data: String,
 }
 
+#[derive(Deserialize)]
+pub enum FileTransferRequestType {
+    Init,
+    Finish,
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Mobilizer {
     pub bond_mobility: BondMobility,
     pub chain: Option<String>,
     pub first_residue: Option<i32>,
     pub last_residue: Option<i32>,
-}
-
-#[derive(Deserialize)]
-pub enum UploadFileRequestType {
-    Start,
-    Continue,
-    Finish,
 }
 
 pub type JsonAdvancedParameters = HashMap<String, serde_json::Value>;
@@ -79,7 +78,7 @@ pub enum ApiRequest {
     CloneJob(ApiRequestData),
     ListExamples(ApiRequestData),
     ActivateExample(ApiRequestData),
-    UploadFile(ApiRequestData),
+    FileTransfer(ApiRequestData),
 }
 
 #[derive(Deserialize)]
@@ -92,6 +91,12 @@ pub struct AuthRequestData {
 pub enum AuthRequest {
     LogIn(AuthRequestData),
     LogOut(AuthRequestData),
+}
+
+pub struct TransferChunk {
+    pub job_id: String,
+    pub transfer_id: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Deserialize)]
@@ -126,11 +131,11 @@ pub struct StartJobRawRqData {
     pub commands: String,
 }
 #[derive(Deserialize)]
-pub struct UploadFileData {
-    pub req_type: UploadFileRequestType,
-    pub job_name: String,
+pub struct FileTransferRqData {
+    pub req_type: FileTransferRequestType,
+    pub job_id: String,
+    pub transfer_id: String,
     pub file_name: String,
-    pub data: String,
 }
 
 /* Responses */
@@ -184,6 +189,11 @@ pub struct ExampleListItem {
 }
 
 pub type ExampleList = Vec<ExampleListItem>;
+
+#[derive(Serialize)]
+pub struct FileTranferInfo {
+    pub id: String,
+}
 
 #[derive(Serialize)]
 pub struct JobCommands {
