@@ -173,8 +173,8 @@ pub fn delete_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
     }
 }
 
-pub fn file_transfer(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
-    let parsed: serde_json::Result<api::FileTransferRqData> = serde_json::from_value(data);
+pub fn file_operation(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let parsed: serde_json::Result<api::FileOperationRqData> = serde_json::from_value(data);
     if parsed.is_err() {
         return ApiResponse::fail(Status::BadRequest, String::from("Invalid upload file request"));
     }
@@ -186,7 +186,7 @@ pub fn file_transfer(session: Arc<Session>, data: serde_json::Value) -> ApiRespo
     };
 
     match data.req_type {
-        api::FileTransferRequestType::Init => {
+        api::FileOperationRequestType::InitUpload => {
             match session.init_upload(&job_id, data.file_name) {
                 Ok(id) => {
                     let resp = api::FileTranferInfo{id: uuid_to_str(&id)};
@@ -195,13 +195,19 @@ pub fn file_transfer(session: Arc<Session>, data: serde_json::Value) -> ApiRespo
                 Err(e) => ApiResponse::fail(Status::BadRequest, e)
             }
         },
-        api::FileTransferRequestType::Finish => {
+        api::FileOperationRequestType::FinishUpload => {
             let transfer_id = match Uuid::from_str(data.transfer_id.as_str()) {
                 Ok(id) => id,
                 Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
             };
 
             match session.finish_upload(job_id, transfer_id) {
+                Ok(()) => ApiResponse::ok(serde_json::to_value(api::Empty{}).unwrap()),
+                Err(e) => ApiResponse::fail(Status::BadRequest, e),
+            }
+        },
+        api::FileOperationRequestType::Delete => {
+            match session.delete_additional_file(&job_id, data.file_name) {
                 Ok(()) => ApiResponse::ok(serde_json::to_value(api::Empty{}).unwrap()),
                 Err(e) => ApiResponse::fail(Status::BadRequest, e),
             }

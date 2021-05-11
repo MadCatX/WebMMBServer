@@ -20,9 +20,10 @@ pub struct ExtraFile {
 }
 
 #[derive(Deserialize)]
-pub enum FileTransferRequestType {
-    Init,
-    Finish,
+pub enum FileOperationRequestType {
+    InitUpload,
+    FinishUpload,
+    Delete,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -77,7 +78,7 @@ pub enum ApiRequest {
     CloneJob(ApiRequestData),
     ListExamples(ApiRequestData),
     ActivateExample(ApiRequestData),
-    FileTransfer(ApiRequestData),
+    FileOperation(ApiRequestData),
     ListAdditionalFiles(ApiRequestData),
 }
 
@@ -131,8 +132,8 @@ pub struct StartJobRawRqData {
     pub commands: String,
 }
 #[derive(Deserialize)]
-pub struct FileTransferRqData {
-    pub req_type: FileTransferRequestType,
+pub struct FileOperationRqData {
+    pub req_type: FileOperationRequestType,
     pub job_id: String,
     pub transfer_id: String,
     pub file_name: String,

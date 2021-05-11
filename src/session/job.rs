@@ -13,10 +13,8 @@ use crate::mmb;
 use crate::server::api;
 
 #[derive(Clone)]
-pub enum CommandsMode {
-    None,
-    Synthetic,
-    Raw,
+struct AdditionalFileInternal {
+    size: u64,
 }
 
 struct FileTransfer {
@@ -26,6 +24,12 @@ struct FileTransfer {
 }
 
 #[derive(Clone)]
+pub enum CommandsMode {
+    None,
+    Synthetic,
+    Raw,
+}
+
 pub struct AdditionalFile {
     pub name: String,
     pub size: u64,
@@ -56,7 +60,7 @@ pub struct Job {
     mmb_process: Option<Child>,
     created_on: SystemTime,
     file_transfers: HashMap<Uuid, FileTransfer>,
-    additional_files: Vec<AdditionalFile>,
+    additional_files: HashMap<String, AdditionalFileInternal>,
     file_transfer_timeout: Duration,
 }
 
@@ -404,9 +408,19 @@ impl Job {
             mmb_process: None,
             created_on: std::time::SystemTime::now(),
             file_transfers: HashMap::new(),
-            additional_files: Vec::new(),
+            additional_files: HashMap::new(),
             file_transfer_timeout: Duration::new(30, 0),
         })
+    }
+
+    pub fn delete_additional_file(&mut self, file_name: String) -> Result<(), String> {
+        match self.additional_files.remove(&file_name) {
+            Some(_) => {
+                self.delete_file(&file_name);
+                Ok(())
+            },
+            None => Err(String::from("No such file")),
+        }
     }
 
     pub fn finish_upload(&mut self, id: Uuid) -> Result<(), String> {
@@ -419,7 +433,7 @@ impl Job {
             Ok(_) =>
                 match xfr.fh.metadata() {
                     Ok(m) => {
-                        self.additional_files.push(AdditionalFile{name: xfr.file_name, size: m.len()});
+                        self.additional_files.insert(xfr.file_name, AdditionalFileInternal{size: m.len()});
                         Ok(())
                     },
                     Err(e) => {
@@ -540,7 +554,7 @@ impl Job {
     }
 
     pub fn list_additional_files(&self) -> Vec<AdditionalFile> {
-        self.additional_files.clone()
+        self.additional_files.iter().map(|(k, v)| { AdditionalFile{name: k.clone(), size: v.size} }).collect()
     }
 
     pub fn start(&mut self, commands: api::JsonCommands) -> Result<(), String> {
@@ -714,6 +728,13 @@ impl Job {
             },
             None => Err(String::from("No such transfer")),
         }
+    }
+
+    fn delete_file(&self, file_path: &String) {
+        let mut path = self.job_dir.clone();
+        path.push(file_path);
+
+        std::fs::remove_file(path);
     }
 
     fn terminate_transfer(&mut self, id: &Uuid) {

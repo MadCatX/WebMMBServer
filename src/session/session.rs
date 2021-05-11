@@ -163,6 +163,15 @@ impl Session {
         }
     }
 
+    pub fn delete_additional_file(&self, id: &Uuid, file_name: String) -> Result<(), String> {
+        let mut data = self.data.write().unwrap();
+
+        match data.jobs.get_mut(id) {
+            Some(job) => job.delete_additional_file(file_name),
+            None => Err(String::from("No such job")),
+        }
+    }
+
     pub fn finish_upload(&self, job_id: Uuid, transfer_id: Uuid) -> Result<(), String> {
         let mut data = self.data.write().unwrap();
 
