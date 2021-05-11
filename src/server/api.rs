@@ -51,7 +51,6 @@ pub struct JsonCommands {
     pub mobilizers: Vec<Mobilizer>,
     pub adv_params: JsonAdvancedParameters,
     pub set_default_MD_parameters: bool,
-    pub extra_files: Vec<ExtraFile>,
 }
 
 /* Requests */

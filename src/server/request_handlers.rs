@@ -24,11 +24,6 @@ fn empty_job_info() -> api::JobInfo {
     }
 }
 
-fn job_commands_pruned(mut commands: api::JsonCommands) -> api::JsonCommands {
-    commands.extra_files.clear();
-    commands
-}
-
 fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
     api::JobInfo{
         id: session::uuid_to_str(id),
@@ -261,8 +256,7 @@ pub fn job_commands(session: Arc<Session>, data: serde_json::Value) -> ApiRespon
         Ok(v) => {
             match v {
                 Some(commands) => {
-                    let pruned = job_commands_pruned(commands);
-                    let resp = api::JobCommands{is_empty: false, commands: Some(pruned)};
+                    let resp = api::JobCommands{is_empty: false, commands: Some(commands)};
                     ApiResponse::ok(serde_json::to_value(resp).unwrap())
                 },
                 None => {
