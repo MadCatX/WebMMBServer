@@ -315,6 +315,16 @@ impl Job {
         get_stages(&self.job_dir, mmb::TRAJECTORY_FILE_PREFIX)
     }
 
+    pub fn cancel_upload(&mut self, transfer_id: &Uuid) -> Result<(), String> {
+        match self.file_transfers.remove(&transfer_id) {
+            Some(xfr) => {
+                self.delete_file(&xfr.file_name);
+                Ok(())
+            },
+            None => Err(String::from("No such transfer")),
+        }
+    }
+
     pub fn clone(name: String, mmb_exec_path: PathBuf, job_dir: PathBuf, src: &Job) -> Result<Job, String> {
         if !src.file_transfers.is_empty() {
             return Err(String::from("Jobs with active file transfers cannot be cloned"));

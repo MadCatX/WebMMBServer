@@ -42,6 +42,15 @@ fn prepare_job_dir(root: &PathBuf, id: &Uuid, params: &PathBuf) -> Result<PathBu
 }
 
 impl Session {
+    pub fn cancel_upload(&self, job_id: &Uuid, transfer_id: &Uuid) -> Result<(), String> {
+        let mut data = self.data.write().unwrap();
+
+        match data.jobs.get_mut(job_id) {
+            Some(job) => job.cancel_upload(transfer_id),
+            None => Err(String::from("No such job")),
+        }
+    }
+
     pub fn create(id: Uuid, is_logged_in: bool, mmb_exec_path: PathBuf, mmb_parameters_path: PathBuf, jobs_dir: PathBuf) -> Result<Session, String> {
         let mut db = DirBuilder::new();
         db.recursive(false);

@@ -23,6 +23,7 @@ pub struct ExtraFile {
 pub enum FileOperationRequestType {
     InitUpload,
     FinishUpload,
+    CancelUpload,
     Delete,
 }
 

@@ -211,7 +211,18 @@ pub fn file_operation(session: Arc<Session>, data: serde_json::Value) -> ApiResp
                 Ok(()) => ApiResponse::ok(serde_json::to_value(api::Empty{}).unwrap()),
                 Err(e) => ApiResponse::fail(Status::BadRequest, e),
             }
-        }
+        },
+        api::FileOperationRequestType::CancelUpload => {
+            let transfer_id = match Uuid::from_str(data.transfer_id.as_str()) {
+                Ok(id) => id,
+                Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+            };
+
+            match session.cancel_upload(&job_id, &transfer_id) {
+                Ok(()) => ApiResponse::ok(serde_json::to_value(api::Empty{}).unwrap()),
+                Err(e) => ApiResponse::fail(Status::BadRequest, e),
+            }
+        },
     }
 }
 
