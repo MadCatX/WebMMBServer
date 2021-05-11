@@ -98,6 +98,7 @@ pub enum AuthRequest {
 pub struct TransferChunk {
     pub job_id: String,
     pub transfer_id: String,
+    pub challenge: i32,
     pub data: Vec<u8>,
 }
 
@@ -199,8 +200,9 @@ pub struct ExampleListItem {
 pub type ExampleList = Vec<ExampleListItem>;
 
 #[derive(Serialize)]
-pub struct FileTranferInfo {
+pub struct FileTranferAck {
     pub id: String,
+    pub challenge: [u8; 4],
 }
 
 #[derive(Serialize)]

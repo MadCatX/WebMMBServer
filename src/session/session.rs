@@ -209,7 +209,7 @@ impl Session {
         self.id.clone()
     }
 
-    pub fn init_upload(&self, id: &Uuid, file_name: String) -> Result<Uuid, String> {
+    pub fn init_upload(&self, id: &Uuid, file_name: String) -> Result<(Uuid, i32), String> {
         let mut data = self.data.write().unwrap();
 
         match data.jobs.get_mut(id) {
@@ -348,11 +348,11 @@ impl Session {
         }
     }
 
-    pub fn upload_chunk(&self, job_id: &Uuid, transfer_id: &Uuid, chunk: Vec<u8>) -> Result<(), String> {
+    pub fn upload_chunk(&self, job_id: &Uuid, transfer_id: &Uuid, challenge: i32, chunk: Vec<u8>) -> Result<i32, String> {
         let mut data = self.data.write().unwrap();
 
         match data.jobs.get_mut(job_id) {
-            Some(job) => job.upload_chunk(transfer_id, chunk),
+            Some(job) => job.upload_chunk(transfer_id, challenge, chunk),
             None => return Err(String::from("No such job")),
         }
     }

@@ -7,6 +7,7 @@ use std::process::{Child, Command};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use file_lock::FileLock;
+use rand::prelude::*;
 use uuid::Uuid;
 
 use crate::mmb;
@@ -20,6 +21,7 @@ struct AdditionalFileInternal {
 struct FileTransfer {
     pub fh: std::fs::File,
     pub file_name: String,
+    pub last_challenge: i32,
     pub last_activity: SystemTime,
 }
 
@@ -519,7 +521,7 @@ impl Job {
         }
     }
 
-    pub fn init_upload(&mut self, file_name: String) -> Result<Uuid, String> {
+    pub fn init_upload(&mut self, file_name: String) -> Result<(Uuid, i32), String> {
         let id = Uuid::new_v4();
 
         if self.file_transfers.contains_key(&id) {
@@ -544,16 +546,18 @@ impl Job {
             Err(e) => return Err(e.to_string()),
         };
 
+        let challenge = rand::thread_rng().gen();
         self.file_transfers.insert(
             id,
             FileTransfer{
                 fh,
                 file_name,
+                last_challenge: challenge,
                 last_activity: SystemTime::now(),
             }
         );
 
-        Ok(id)
+        Ok((id, challenge))
     }
 
     pub fn last_available_stage(&self) -> Option<i32> {
@@ -727,14 +731,22 @@ impl Job {
         }
     }
 
-    pub fn upload_chunk(&mut self, transfer_id: &Uuid, chunk: Vec<u8>) -> Result<(), String> {
+    pub fn upload_chunk(&mut self, transfer_id: &Uuid, challenge: i32, chunk: Vec<u8>) -> Result<i32, String> {
         match self.file_transfers.get_mut(transfer_id) {
-            Some(xfr) => match xfr.fh.write(&chunk) {
-                Ok(_) => {
-                    xfr.last_activity = SystemTime::now();
-                    Ok(())
-                },
-                Err(e) => Err(format!("Failed to write file: {}", e.to_string())),
+            Some(xfr) => {
+                if challenge != xfr.last_challenge {
+                    return Err(String::from("Invalid challenge"));
+                }
+
+                let challenge = rand::thread_rng().gen();
+                match xfr.fh.write(&chunk) {
+                    Ok(_) => {
+                        xfr.last_challenge = challenge;
+                        xfr.last_activity = SystemTime::now();
+                        Ok(challenge)
+                    },
+                    Err(e) => Err(format!("Failed to write file: {}", e.to_string())),
+                }
             },
             None => Err(String::from("No such transfer")),
         }
