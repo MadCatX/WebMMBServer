@@ -26,6 +26,12 @@ struct FileTransfer {
 }
 
 #[derive(Clone)]
+pub struct AdditionalFile {
+    pub name: String,
+    pub size: u64,
+}
+
+#[derive(Clone)]
 pub struct JobInfo {
     pub name: String,
     pub state: mmb::State,
@@ -50,7 +56,7 @@ pub struct Job {
     mmb_process: Option<Child>,
     created_on: SystemTime,
     file_transfers: HashMap<Uuid, FileTransfer>,
-    additional_files: Vec<String>,
+    additional_files: Vec<AdditionalFile>,
     file_transfer_timeout: Duration,
 }
 
@@ -409,8 +415,20 @@ impl Job {
         }
 
         let xfr = self.file_transfers.remove(&id).unwrap();
-        self.additional_files.push(xfr.file_name);
-        Ok(())
+        match xfr.fh.sync_all() {
+            Ok(_) =>
+                match xfr.fh.metadata() {
+                    Ok(m) => {
+                        self.additional_files.push(AdditionalFile{name: xfr.file_name, size: m.len()});
+                        Ok(())
+                    },
+                    Err(e) => {
+                        // TODO: Delete the file
+                        Err(format!("Cannot get metadata: {}", e.to_string()))
+                    },
+                },
+            Err(e) => Err(format!("Cannot write file: {}", e.to_string())),
+        }
     }
 
     pub fn info(&mut self) -> Result<JobInfo, String> {
@@ -519,6 +537,10 @@ impl Job {
             Some(v) => Some(*v),
             None => None
         }
+    }
+
+    pub fn list_additional_files(&self) -> Vec<AdditionalFile> {
+        self.additional_files.clone()
     }
 
     pub fn start(&mut self, commands: api::JsonCommands) -> Result<(), String> {

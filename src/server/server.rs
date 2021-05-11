@@ -202,6 +202,7 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
         api::ApiRequest::ListExamples(_) => Ok(request_handlers::list_examples(state.examples_dir.clone())),
         api::ApiRequest::ActivateExample(v) => Ok(request_handlers::activate_example(s, v.data, state.examples_dir.clone())),
         api::ApiRequest::FileTransfer(v) => Ok(request_handlers::file_transfer(s, v.data)),
+        api::ApiRequest::ListAdditionalFiles(v) => Ok(request_handlers::list_additional_files(s, v.data)),
     }
 }
 

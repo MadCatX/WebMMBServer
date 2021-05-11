@@ -217,6 +217,15 @@ impl Session {
         list
     }
 
+    pub fn list_job_additional_files(&self, id: &Uuid) -> Result<Vec<job::AdditionalFile>, String> {
+        let data = self.data.read().unwrap();
+
+        match data.jobs.get(id) {
+            Some(job) => Ok(job.list_additional_files()),
+            None => Err(String::from("No such job")),
+        }
+    }
+
     pub fn job_commands(&self, id: Uuid) -> Result<Option<api::JsonCommands>, String> {
         let data = self.data.read().unwrap();
 

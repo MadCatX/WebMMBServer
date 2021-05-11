@@ -78,6 +78,7 @@ pub enum ApiRequest {
     ListExamples(ApiRequestData),
     ActivateExample(ApiRequestData),
     FileTransfer(ApiRequestData),
+    ListAdditionalFiles(ApiRequestData),
 }
 
 #[derive(Deserialize)]
@@ -175,6 +176,12 @@ pub struct ErrorResponse {
 pub struct OkResponse {
     pub success: bool,
     pub data: serde_json::Value,
+}
+
+#[derive(Serialize)]
+pub struct AdditionalFile {
+    pub name: String,
+    pub size: String,
 }
 
 #[derive(Serialize)]

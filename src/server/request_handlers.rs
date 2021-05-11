@@ -209,6 +209,30 @@ pub fn file_transfer(session: Arc<Session>, data: serde_json::Value) -> ApiRespo
     }
 }
 
+pub fn list_additional_files(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
+    let id = match handle_simple_rq_data(data) {
+        Ok(id) => id,
+        Err(e) => return ApiResponse::fail(Status::BadRequest, e),
+    };
+
+    match session.list_job_additional_files(&id) {
+        Ok(l) => {
+            let mut list = Vec::<api::AdditionalFile>::new();
+            for file in l {
+                list.push(
+                    api::AdditionalFile{
+                        name: file.name,
+                        size: file.size.to_string(),
+                    }
+                );
+            }
+
+            ApiResponse::ok(serde_json::to_value(list).unwrap())
+        }
+        Err(e) => ApiResponse::fail(Status::BadRequest, e),
+    }
+}
+
 pub fn list_examples(path: PathBuf) -> ApiResponse {
     let list = match mmb::examples::get_examples(path) {
         Ok(v) => v,
