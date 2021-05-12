@@ -95,10 +95,10 @@ pub enum AuthRequest {
     LogOut(AuthRequestData),
 }
 
-pub struct TransferChunk {
+pub struct FileTransferChunk {
     pub job_id: String,
     pub transfer_id: String,
-    pub challenge: i32,
+    pub index: u32,
     pub data: Vec<u8>,
 }
 
@@ -202,7 +202,6 @@ pub type ExampleList = Vec<ExampleListItem>;
 #[derive(Serialize)]
 pub struct FileTranferAck {
     pub id: String,
-    pub challenge: [u8; 4],
 }
 
 #[derive(Serialize)]

@@ -188,9 +188,8 @@ pub fn file_operation(session: Arc<Session>, data: serde_json::Value) -> ApiResp
     match data.req_type {
         api::FileOperationRequestType::InitUpload => {
             match session.init_upload(&job_id, data.file_name) {
-                Ok((id, challenge)) => {
-                    let chal_bytes = challenge.to_le_bytes();
-                    let resp = api::FileTranferAck{id: uuid_to_str(&id), challenge: chal_bytes};
+                Ok(id) => {
+                    let resp = api::FileTranferAck{id: uuid_to_str(&id)};
                     ApiResponse::ok(serde_json::to_value(resp).unwrap())
                 },
                 Err(e) => ApiResponse::fail(Status::BadRequest, e)

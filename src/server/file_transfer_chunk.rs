@@ -2,8 +2,8 @@ use std::convert::TryInto;
 
 use crate::server::api;
 
-impl api::TransferChunk {
-    pub fn from_bytes(v: &[u8]) -> Result<api::TransferChunk, String> {
+impl api::FileTransferChunk {
+    pub fn from_bytes(v: &[u8]) -> Result<api::FileTransferChunk, String> {
         if v.len() < 77 {
             return Err(String::from("Array must be at least 77 bytes long"));
         }
@@ -16,10 +16,10 @@ impl api::TransferChunk {
             Ok(id) => id,
             Err(_) => return Err(String::from("transfer_id part is not a valid UTF-8 byte sequence")),
         };
-        let challenge = i32::from_le_bytes(v[72..76].try_into().unwrap());
+        let index = u32::from_le_bytes(v[72..76].try_into().unwrap());
 
         let data = Vec::from(&v[76..]);
 
-        Ok(api::TransferChunk{job_id, transfer_id, challenge, data})
+        Ok(api::FileTransferChunk{job_id, transfer_id, index, data})
     }
 }

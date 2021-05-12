@@ -207,7 +207,7 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
 }
 
 #[post("/xfr", format = "application/octet-stream", data = "<req>")]
-fn xfr(req: api::TransferChunk, mut cookies: Cookies, state: State<AppState>) -> Result<api::ApiResponse, WMSError> {
+fn xfr(req: api::FileTransferChunk, mut cookies: Cookies, state: State<AppState>) -> Result<api::ApiResponse, WMSError> {
     let s = match get_session_authorized(&mut cookies, &state) {
         Some(s) => s,
         None => return Err(WMSError{status: Status::Forbidden}),

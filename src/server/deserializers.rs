@@ -76,7 +76,7 @@ impl<'a> FromData<'a> for api::AuthRequest {
     }
 }
 
-impl<'a> FromData<'a> for api::TransferChunk {
+impl<'a> FromData<'a> for api::FileTransferChunk {
     type Error = String;
     type Owned = Vec<u8>;
     type Borrowed = Vec<u8>;
@@ -95,7 +95,7 @@ impl<'a> FromData<'a> for api::TransferChunk {
     fn from_data(_: &Request, outcome: Transformed<'a, Self>) -> Outcome<Self, Self::Error> {
         let buf = outcome.borrowed()?;
 
-        match api::TransferChunk::from_bytes(&buf) {
+        match api::FileTransferChunk::from_bytes(&buf) {
             Ok(chunk) => Success(chunk),
             Err(e) => Failure((Status::BadRequest, e)),
         }
