@@ -1,13 +1,17 @@
-# WebMMB Server
+# WebMMB and WebMMBServer
 
-WebMMB server provides the backend for [WebMMB](https://github.com/MadCatX/WebMMB) application. WebMMB server requires functional [MMB](https://github.com/samuelflores/MMB) installation.
+WebMMB is a web-based service for the [MacroMoleculeBuilder (MMB)](https://github.com/samuelflores/MMB) structural biology tool.
+
+WebMMBServer is the backend of the service. WebMMBServer manages user sessions and controls MMB jobs. In order to function, WebmMMBServer requires MMB to be installed on the server where it runs.
 
 ## Installation
-WebMMBServer uses [Rocket](https://rocket.rs/) which requires the latest Rust nightly toolchain. Follow the instructions at [rustup.rs](https://rustup.rs/) to set up Rust development toolchain. Install the `nightly` toolchain by issuing
+WebMMBServer is based on [Rocket](https://rocket.rs/) library which requires the latest Rust nightly toolchain. Follow the instructions at [rustup.rs](https://rustup.rs/) to set up Rust development toolchain. Install the `nightly` toolchain by issuing
 
     rustup toolchain install nightly
 
-command in the terminal. `cd` into the directory with WebMMBServer project sources and set the `nightly` toolchain as default for the project with the following command:
+command in the terminal.
+
+`cd` into the directory with WebMMBServer project sources and set the `nightly` toolchain as default for the project with the following command:
 
     rustup override set nightly
 
@@ -28,7 +32,8 @@ WebMMBServer needs a configuration file to launch. A `cfg.json` file needs to be
 * `jobs_dir`: Directory where WebMMBServer will store MMB job data
 * `root_dir`: Directory with the WebMMB web application data
 * `port`: Port on which the WebMMBServer will listen
-* `domain`: Internet domain name on which the server is running
+* `domain`: Internet domain name on which the server will run. This must be set correctly for the session cookies to work properly. Set this to `localhost` if you are running a local WEbMMBServer instance that is not accessible over the Internet
+* `require_https`: Require HTTPS connection. If you are not using HTTPS, this must be set to `false`
 
 Example
 
