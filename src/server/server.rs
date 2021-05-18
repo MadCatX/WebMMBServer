@@ -9,7 +9,7 @@ use rocket::response::{NamedFile, Redirect};
 use rocket::uri;
 use uuid::Uuid;
 
-use crate::config::Config;
+use crate::config;
 use crate::session;
 use crate::session::session_manager::SessionManager;
 use crate::server::api;
@@ -256,7 +256,9 @@ fn structure(session_id: String, job_id: String, stage: String, state: State<App
     }
 }
 
-pub fn start(cfg: Arc<Config>) {
+pub fn start() {
+    let cfg = config::get();
+
     let srv_cfg = rocket::config::Config::build(rocket::config::Environment::Staging)
         .root(cfg.root_dir.clone())
         .port(cfg.port)
@@ -278,7 +280,7 @@ pub fn start(cfg: Arc<Config>) {
                ]
         )
         .manage(AppState{
-            sm: RwLock::new(SessionManager::create(cfg.clone())),
+            sm: RwLock::new(SessionManager::create()),
             jobs_dir: PathBuf::from(cfg.jobs_dir.as_str()),
             examples_dir: PathBuf::from(cfg.examples_dir.as_str()),
             domain: cfg.domain.clone(),

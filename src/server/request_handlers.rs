@@ -58,6 +58,7 @@ fn handle_simple_rq_data(data: serde_json::Value) -> Result<Uuid, String> {
 fn mmb_state_to_job_state(s: mmb::State) -> api::JobState {
     match s {
         mmb::State::NotStarted => api::JobState::NotStarted,
+        mmb::State::Queued => api::JobState::Queued,
         mmb::State::Running => api::JobState::Running,
         mmb::State::Finished => api::JobState::Finished,
         mmb::State::Failed => api::JobState::Failed,
@@ -359,7 +360,7 @@ pub fn mmb_output(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
         Err(e) => return ApiResponse::fail(Status::BadRequest, e),
     };
 
-    match session.job_stdout(&id) {
+    match session.job_diagnostics(&id) {
         Some(ret) => match ret {
             Ok(txt) => ApiResponse::ok(serde_json::to_value(txt).unwrap()),
             Err(e) => ApiResponse::fail(Status::InternalServerError, e),

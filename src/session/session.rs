@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use uuid::Uuid;
 
-use crate::mmb;
+use crate::{config, mmb};
 use crate::server::api;
 use crate::session;
 use crate::session::job;
@@ -17,12 +17,10 @@ struct SessionData {
 pub struct Session {
     data: RwLock<SessionData>,
     id: Uuid,
-    mmb_exec_path: PathBuf,
-    mmb_parameters_path: PathBuf,
     jobs_dir: PathBuf,
 }
 
-fn prepare_job_dir(root: &PathBuf, id: &Uuid, params: &PathBuf) -> Result<PathBuf, String> {
+fn prepare_job_dir(root: &PathBuf, id: &Uuid) -> Result<PathBuf, String> {
     let mut db = DirBuilder::new();
     db.recursive(false);
 
@@ -32,7 +30,7 @@ fn prepare_job_dir(root: &PathBuf, id: &Uuid, params: &PathBuf) -> Result<PathBu
         Ok(_) => {
             let mut param_dst_path = path.clone();
             param_dst_path.push(mmb::PARAMS_FILE_NAME);
-            match std::fs::copy(params, param_dst_path) {
+            match std::fs::copy(&config::get().mmb_parameters_path, param_dst_path) {
                 Ok(_) => Ok(path),
                 Err(e) => Err(e.to_string()),
             }
@@ -51,7 +49,7 @@ impl Session {
         }
     }
 
-    pub fn create(id: Uuid, is_logged_in: bool, mmb_exec_path: PathBuf, mmb_parameters_path: PathBuf, jobs_dir: PathBuf) -> Result<Session, String> {
+    pub fn create(id: Uuid, is_logged_in: bool, jobs_dir: PathBuf) -> Result<Session, String> {
         let mut db = DirBuilder::new();
         db.recursive(false);
         match db.create(&jobs_dir) {
@@ -65,8 +63,6 @@ impl Session {
                 Ok(Session{
                     data,
                     id,
-                    mmb_exec_path,
-                    mmb_parameters_path,
                     jobs_dir,
                 })
             },
@@ -86,11 +82,10 @@ impl Session {
 
         let id = Uuid::new_v4();
 
-        match prepare_job_dir(&self.jobs_dir, &id, &self.mmb_parameters_path) {
+        match prepare_job_dir(&self.jobs_dir, &id) {
             Ok(job_dir) => {
                 match job::Job::create(
                     name,
-                    self.mmb_exec_path.clone(),
                     job_dir,
                     synthetic_commands,
                     raw_commands
@@ -131,11 +126,10 @@ impl Session {
             Err(e) => return Err(e),
         };
 
-        match prepare_job_dir(&self.jobs_dir, &id, &self.mmb_parameters_path) {
+        match prepare_job_dir(&self.jobs_dir, &id) {
             Ok(job_dir) => {
                 match job::Job::clone(
                     name,
-                    self.mmb_exec_path.clone(),
                     job_dir,
                     &src_job
                 ) {
@@ -262,6 +256,15 @@ impl Session {
         }
     }
 
+    pub fn job_diagnostics(&self, id: &Uuid) -> Option<Result<String, String>> {
+        let mut data = self.data.write().unwrap();
+
+        match data.jobs.get_mut(&id) {
+            Some(job) => Some(job.diagnostics()),
+            None => None
+        }
+    }
+
     pub fn job_info(&self, id: Uuid) -> Option<Result<job::JobInfo, String>> {
         let mut data = self.data.write().unwrap();
 
@@ -277,15 +280,6 @@ impl Session {
         match data.jobs.get(&id) {
             Some(job) => job.last_available_stage(),
             None => None,
-        }
-    }
-
-    pub fn job_stdout(&self, id: &Uuid) -> Option<Result<String, String>> {
-        let mut data = self.data.write().unwrap();
-
-        match data.jobs.get_mut(&id) {
-            Some(job) => Some(job.stdout()),
-            None => None
         }
     }
 

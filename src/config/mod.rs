@@ -1,7 +1,20 @@
-use std::sync::Arc;
 use std::io::prelude::*;
 use serde_derive::Deserialize;
 use serde_json;
+
+static mut CONFIG: ConfigContainer = ConfigContainer{
+    config: Config{
+        mmb_exec_path: String::new(),
+        mmb_parameters_path: String::new(),
+        jobs_dir: String::new(),
+        examples_dir: String::new(),
+        root_dir: String::new(),
+        domain: String::new(),
+        port: 0,
+        require_https: false,
+    },
+    is_empty: true,
+};
 
 fn check_dir_exists(path: &str) {
     let p = std::path::Path::new(path);
@@ -40,8 +53,17 @@ pub struct Config {
     pub require_https: bool,
 }
 
-impl Config {
-    fn load(cfg_path: &str) -> Config {
+struct ConfigContainer {
+    config: Config,
+    is_empty: bool,
+}
+
+impl ConfigContainer {
+    fn is_empty(&self) -> bool {
+        self.is_empty
+    }
+
+    fn load(cfg_path: &str) {
         let cfg: Config = match serde_json::from_str(read_config(cfg_path).as_str()) {
             Ok(cfg) => cfg,
             Err(e) => panic!("Failed to parse configuation file: {}", e.to_string()),
@@ -58,10 +80,29 @@ impl Config {
             panic!("Invalid port number");
         }
 
-        cfg
+        unsafe {
+            CONFIG.config = cfg;
+            CONFIG.is_empty = false;
+        }
     }
 }
 
-pub fn load(cfg_path: &str) -> Arc<Config> {
-    Arc::from(Config::load(cfg_path))
+pub fn get() -> &'static Config {
+    unsafe {
+        if CONFIG.is_empty() {
+            panic!("Server configuration was accessed before it was initialized");
+        }
+
+        &CONFIG.config
+    }
+}
+
+pub fn load(cfg_path: &str) {
+    unsafe {
+        if !CONFIG.is_empty() {
+            panic!("Attemped to load server configuration after it has been already loaded");
+        }
+    }
+
+    ConfigContainer::load(cfg_path)
 }

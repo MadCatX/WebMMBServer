@@ -16,6 +16,7 @@ pub const TRAJECTORY_FILE_PREFIX: &'static str = "trajectory";
 pub enum State {
     Unknown,
     NotStarted,
+    Queued,
     Running,
     Failed,
     Finished,

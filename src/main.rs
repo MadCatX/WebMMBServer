@@ -7,8 +7,8 @@ mod mmb;
 mod server;
 mod session;
 
-fn init(cfg: &config::Config) {
-    let p = std::path::Path::new(cfg.jobs_dir.as_str());
+fn init() {
+    let p = std::path::Path::new(config::get().jobs_dir.as_str());
     if !std::path::Path::is_dir(p) {
         let mut db = std::fs::DirBuilder::new();
         db.recursive(true);
@@ -17,8 +17,8 @@ fn init(cfg: &config::Config) {
 }
 
 fn main() {
-    let cfg = config::load("./cfg.json");
-    init(cfg.as_ref());
+    config::load("./cfg.json");
+    init();
 
-    server::start(cfg);
+    server::start();
 }

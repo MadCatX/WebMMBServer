@@ -7,10 +7,6 @@ mod server;
 mod session_cookie;
 mod transfer_handlers;
 
-use std::sync::Arc;
-
-use crate::config::Config;
-
-pub fn start(cfg: Arc<Config>) {
-    server::start(cfg);
+pub fn start() {
+    server::start();
 }

@@ -5,22 +5,20 @@ use std::time::Duration;
 use std::thread;
 use uuid::Uuid;
 
-use crate::config::Config;
+use crate::config;
 use crate::session;
 use crate::session::session::Session;
 
 pub struct SessionManager {
     sessions: HashMap<Uuid, Arc<Session>>,
     session_watchdogs: HashMap<Uuid, thread::JoinHandle<()>>,
-    cfg: Arc<Config>,
 }
 
 impl<'a> SessionManager {
-    pub fn create(cfg: Arc<Config>) -> SessionManager {
+    pub fn create() -> SessionManager {
         SessionManager {
             sessions: HashMap::new(),
             session_watchdogs: HashMap::new(),
-            cfg,
         }
     }
 
@@ -31,13 +29,11 @@ impl<'a> SessionManager {
                 Ok(())
             },
             None => {
-                let mut jobs_dir = PathBuf::from(&self.cfg.jobs_dir);
+                let mut jobs_dir = PathBuf::from(config::get().jobs_dir.clone());
                 jobs_dir.push(session::uuid_to_str(&session_id));
                 match Session::create(
                         session_id.clone(),
                         true,
-                        PathBuf::from(self.cfg.mmb_exec_path.as_str()),
-                        PathBuf::from(self.cfg.mmb_parameters_path.clone()),
                         jobs_dir
                     ) {
                     Ok(s) => {

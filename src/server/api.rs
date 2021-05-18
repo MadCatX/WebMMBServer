@@ -157,6 +157,7 @@ pub struct AuthResponse {
 #[derive(Serialize)]
 pub enum JobState {
     NotStarted,
+    Queued,
     Running,
     Finished,
     Failed,
