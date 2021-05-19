@@ -145,25 +145,24 @@ impl Session {
     }
 
     pub fn delete_job(&self, id: &Uuid) -> bool {
-        let mut job = {
-            let mut data = self.data.write().unwrap();
-            match data.jobs.remove(id) {
-                Some(job) => job,
-                None => return false,
-            }
+        let mut data = self.data.write().unwrap();
+
+        let job = match data.jobs.get_mut(id) {
+            Some(job) => job,
+            None => return false,
         };
 
         match job.info() {
             Ok(info) => {
                 if info.state == mmb::State::Running {
-                    if job.stop().is_err() {
-                        return false;
-                    }
+                    return false;
                 }
-                true
             },
-            Err(_) => false,
-        }
+            Err(e) => return false,
+        };
+
+        data.jobs.remove(id);
+        return true;
     }
 
     pub fn delete_additional_file(&self, id: &Uuid, file_name: String) -> Result<(), String> {
@@ -265,12 +264,12 @@ impl Session {
         }
     }
 
-    pub fn job_info(&self, id: Uuid) -> Option<Result<job::JobInfo, String>> {
+    pub fn job_info(&self, id: Uuid) -> Result<job::JobInfo, String> {
         let mut data = self.data.write().unwrap();
 
         match data.jobs.get_mut(&id) {
-            Some(job) => Some(job.info()),
-            None => return None
+            Some(job) => job.info(),
+            None => Err(String::from("No such job")),
         }
     }
 
@@ -289,48 +288,32 @@ impl Session {
         data.is_logged_in = login_state;
     }
 
-    pub fn start_job(&self, id: &Uuid, commands: api::JsonCommands) -> Result<(Uuid, job::JobInfo), String> {
+    pub fn start_job(&self, id: &Uuid, commands: api::JsonCommands) -> Result<(), String> {
         if !self.has_job(id) {
             return Err(format!("Job with id {} does not exist", id));
         }
 
         let mut data = self.data.write().unwrap();
         let job = data.jobs.get_mut(&id).unwrap();
-        match job.start(commands) {
-            Ok(()) => {
-                match job.info() {
-                    Ok(info) => Ok((*id, info)),
-                    Err(e) => Err(e),
-                }
-            },
-            Err(e) => Err(e),
-        }
+        job.start(commands)
     }
 
-    pub fn start_job_raw(&self, id: &Uuid, raw_commands: String) -> Result<(Uuid, job::JobInfo), String> {
+    pub fn start_job_raw(&self, id: &Uuid, raw_commands: String) -> Result<(), String> {
         if !self.has_job(id) {
             return Err(format!("Job with id {} does not exist", id));
         }
 
         let mut data = self.data.write().unwrap();
         let job = data.jobs.get_mut(&id).unwrap();
-        match job.start_raw(raw_commands) {
-            Ok(()) => {
-                match job.info() {
-                    Ok(info) => Ok((*id, info)),
-                    Err(e) => Err(e),
-                }
-            },
-            Err(e) => Err(e),
-        }
+        job.start_raw(raw_commands)
     }
 
-    pub fn stop_job(&self, id: Uuid) -> Result<job::JobInfo, String> {
+    pub fn stop_job(&self, id: Uuid) -> Result<(), String> {
         let mut data = self.data.write().unwrap();
 
         match data.jobs.get_mut(&id) {
-            Some(job) => return job.stop(),
-            None => return Err(String::from("No such job")),
+            Some(job) => job.stop(),
+            None => Err(String::from("No such job")),
         }
     }
 

@@ -218,23 +218,29 @@ pub struct JobCommandsRaw {
 }
 
 #[derive(Serialize)]
-pub struct JobInfo {
+pub struct JobCreated {
     pub id: String,
-    pub name: String,
-    pub state: JobState,
-    pub step: String,
-    pub total_steps: i32,
-    pub available_stages: Vec<i32>,
-    pub current_stage: Option<i32>,
-    pub created_on: String,
-    pub commands_mode: JobCommandsMode,
 }
 
 #[derive(Serialize)]
-pub struct JobListItem {
-    pub ok: bool,
-    pub info: JobInfo,
+pub struct JobInfo {
+    pub id: String,
+    pub name: String,
+    pub created_on: String,
+    pub commands_mode: JobCommandsMode,
+    pub available_stages: Vec<i32>,
+    pub current_stage: Option<i32>,
+    pub state: JobState,
+    pub progress: Option<JobProgress>,
 }
+
+#[derive(Serialize)]
+pub struct JobProgress {
+    pub step: String,
+    pub total_steps: i32,
+}
+
+pub type JobList = Vec<JobInfo>;
 
 #[derive(Serialize)]
 pub struct SessionInfo {

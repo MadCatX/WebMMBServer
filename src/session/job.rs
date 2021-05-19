@@ -37,12 +37,17 @@ pub struct AdditionalFile {
 pub struct JobInfo {
     pub name: String,
     pub state: mmb::State,
-    pub step: i32,
-    pub total_steps: i32,
     pub available_stages: Vec<i32>,
     pub current_stage: Option<i32>,
     pub created_on: u128,
     pub commands_mode: CommandsMode,
+    pub progress: Option<JobProgress>,
+}
+
+#[derive(Clone)]
+pub struct JobProgress {
+    pub step: i32,
+    pub total_steps: i32,
 }
 
 pub struct Job {
@@ -375,46 +380,59 @@ impl Job {
         let state = self.state()?;
 
         match state {
+            mmb::State::Unknown => Err(String::from("Unknown job state")),
             mmb::State::NotStarted | mmb::State::Queued =>
                 Ok(JobInfo{
                     name: self.name.clone(),
                     state,
-                    step: 0,
-                    total_steps: 0,
                     available_stages: self.available_stages(),
                     current_stage: self.current_stage,
                     created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
                     commands_mode: self.commands_mode(),
+                    progress: None,
                 }),
-            mmb::State::Unknown => return Err(String::from("Unknown job state")),
             _ => {
                 match self.runner.progress() {
-                    Ok(progress) => {
-                        let state_to_report = {
-                            if state == mmb::State::Running {
-                                /* MMB reports the job has finished but the MMB process is still running
-                                   Wait until the MMB process actually terminates */
-                                mmb::State::Running
-                            } else if progress.state == mmb::State::Running &&
-                                state != mmb::State::Running {
-                                    /* MMB reports that the job is running but its process has died
-                                      Report this as an error */
-                                mmb::State::Failed
-                            } else {
-                                progress.state
-                            }
-                        };
+                    Ok(maybe_progress) => match maybe_progress {
+                        None =>
+                            Ok(JobInfo{
+                                name: self.name.clone(),
+                                state,
+                                available_stages: self.available_stages(),
+                                current_stage: self.current_stage,
+                                created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+                                commands_mode: self.commands_mode(),
+                                progress: None,
+                            }),
+                        Some(progress) => {
+                            let state_to_report = {
+                                if state == mmb::State::Running {
+                                    /* MMB reports the job has finished but the MMB process is still running
+                                       Wait until the MMB process actually terminates */
+                                    mmb::State::Running
+                                } else if progress.state == mmb::State::Running &&
+                                    state != mmb::State::Running {
+                                        /* MMB reports that the job is running but its process has died
+                                           Report this as an error */
+                                    mmb::State::Failed
+                                } else {
+                                    progress.state
+                                }
+                            };
 
-                        Ok(JobInfo{
-                            name: self.name.clone(),
-                            state: state_to_report,
-                            step: progress.step,
-                            total_steps: progress.total_steps,
-                            available_stages: self.available_stages(),
-                            current_stage: self.current_stage,
-                            created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
-                            commands_mode: self.commands_mode(),
-                        })
+                            Ok(JobInfo{
+                                name: self.name.clone(),
+                                state: state_to_report,
+                                available_stages: self.available_stages(),
+                                current_stage: self.current_stage,
+                                created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+                                commands_mode: self.commands_mode(),
+                                progress: Some(JobProgress{
+                                    step: progress.step,
+                                    total_steps: progress.total_steps,
+                                }),
+                            })
+                        },
                     },
                     Err(e) => Err(e),
                 }
@@ -518,13 +536,8 @@ impl Job {
         self.runner.state()
     }
 
-    pub fn stop(&mut self) -> Result<JobInfo, String> {
-        self.runner.stop()?;
-
-        match self.info() {
-            Ok(info) => return Ok(info),
-            Err(e) => return Err(e),
-        }
+    pub fn stop(&mut self) -> Result<(), String> {
+        self.runner.stop()
     }
 
     pub fn terminate_hung_uploads(&mut self) {
