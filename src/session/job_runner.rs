@@ -1,19 +1,9 @@
-use std::path::PathBuf;
-
 use crate::mmb;
-
-pub struct Progress {
-    pub state: mmb::State,
-    pub step: i32,
-    pub total_steps: i32,
-}
+use std::path::{Path, PathBuf};
 
 pub trait JobRunner {
-    fn diagnostics(&mut self) -> Result<String, String>;
-    fn job_dir(&self) -> Result<&PathBuf, String>;
-    fn progress(&self) -> Result<Option<Progress>, String>;
-    fn prune_job_dir(&self) -> Result<(), String>;
-    fn start(&mut self) -> Result<(), String>;
-    fn state(&mut self) -> Result<mmb::State, String>;
+    fn executor_state(&mut self) -> Result<mmb::State, String>;
+    fn prune_job_dir(&self, job_dir: PathBuf) -> Result<(), String>;
+    fn start(&mut self, job_dir: PathBuf, cmds_file_path: &Path, diag_file_path: &Path, progress_file_path: &Path) -> Result<(), String>;
     fn stop(&mut self) -> Result<(), String>;
 }

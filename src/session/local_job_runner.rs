@@ -1,7 +1,5 @@
-use file_lock::FileLock;
 use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::thread;
@@ -9,7 +7,7 @@ use std::time::Duration;
 
 use crate::config;
 use crate::mmb;
-use super::job_runner::{JobRunner, Progress};
+use super::job_runner;
 
 fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
     if proc.is_none() {
@@ -32,119 +30,35 @@ fn check_process(proc: &mut Option<Child>) -> Result<mmb::State, String> {
     }
 }
 
-fn read_mmb_progress(path: &PathBuf) -> Result<Option<Progress>, String> {
-    let path_str = path.to_str();
-    if path_str.is_none() {
-        return Err(String::from("Invalid progress file path"));
-    }
-
-    /* If the progress file does not exist, it could mean that MMB just has not created it yet */
-    if !path.is_file() {
-        return Ok(None);
-    }
-
-    let locked = FileLock::lock(path_str.unwrap(), false, false);
-    if locked.is_err() {
-        /* Error here may indicate that the progress file is locked by MMB */
-        return Ok(None);
-    }
-
-    let mut s = String::new();
-    if locked.unwrap().file.read_to_string(&mut s).is_err() {
-        return Err(String::from("Cannot read progress report file"));
-    }
-
-    let json: serde_json::Result<mmb::Progress> = serde_json::from_str(s.as_str());
-    match json {
-        Ok(progress) => Ok(Some(Progress{
-            state: progress.state,
-            step: progress.step,
-            total_steps: progress.total_steps,
-        })),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-fn remove_file(path: &Path) -> Result<(), String> {
-    if path.exists() {
-        match std::fs::remove_file(path) {
-            Ok(_) => return Ok(()),
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-    Ok(())
-}
-
 pub struct LocalJobRunner {
-    job_dir: PathBuf,
-    cmds_file_path: PathBuf,
-    progress_file_path: PathBuf,
-    diag_output_file_path: PathBuf,
     mmb_process: Option<Child>,
 }
 
-impl JobRunner for LocalJobRunner {
-    fn diagnostics(&mut self) -> Result<String, String> {
-        let state = self.state()?;
-        if state == mmb::State::NotStarted {
-            return Ok(String::new());
-        }
-
-        match std::fs::File::open(&self.diag_output_file_path) {
-            Ok(mut fh) => {
-                let mut buf = String::new();
-                match fh.read_to_string(&mut buf) {
-                    Ok(_) => Ok(buf),
-                    Err(e) => Err(e.to_string()),
-                }
-            },
-            Err(e) => Err(e.to_string()),
-        }
+impl job_runner::JobRunner for LocalJobRunner {
+    fn executor_state(&mut self) -> Result<mmb::State, String> {
+        check_process(&mut self.mmb_process)
     }
 
-    fn job_dir(&self) -> Result<&PathBuf, String> {
-        Ok(&self.job_dir)
+    fn prune_job_dir(&self, _job_dir: PathBuf) -> Result<(), String> {
+        /* Nothing specific to do for this Runner */
+        Ok(())
     }
 
-    fn progress(&self) -> Result<Option<Progress>, String> {
-        read_mmb_progress(&self.progress_file_path)
-    }
-
-    fn prune_job_dir(&self) -> Result<(), String> {
-        match remove_file(&self.progress_file_path) {
-            Ok(_) => (),
-            Err(e) => return Err(e.to_string()),
-        }
-        match remove_file(&self.diag_output_file_path) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    fn start(&mut self) -> Result<(), String> {
+    fn start(&mut self, job_dir: PathBuf, cmds_file_path: &Path, diag_file_path: &Path, progress_file_path: &Path) -> Result<(), String> {
         match Command::new(&config::get().mmb_exec_path)
-            .current_dir(&self.job_dir)
+            .current_dir(&job_dir)
             .arg("-C")
-            .arg(&self.cmds_file_path)
+            .arg(cmds_file_path)
             .arg("-progress")
-            .arg(&self.progress_file_path)
+            .arg(progress_file_path)
             .arg("-output")
-            .arg(&self.diag_output_file_path)
+            .arg(diag_file_path)
             .spawn() {
             Ok(child) => self.mmb_process = Some(child),
             Err(e) => return Err(e.to_string()),
         };
 
         Ok(())
-    }
-
-    fn state(&mut self) -> Result<mmb::State, String> {
-        let proc_state = check_process(&mut self.mmb_process)?;
-
-        if proc_state == mmb::State::Unknown && !self.progress_file_path.exists() {
-            return Ok(mmb::State::NotStarted);
-        }
-        Ok(proc_state)
     }
 
     fn stop(&mut self) -> Result<(), String> {
@@ -187,18 +101,8 @@ impl JobRunner for LocalJobRunner {
 }
 
 impl LocalJobRunner {
-    pub fn create(job_dir: PathBuf, cmds_file_path: PathBuf) -> Result<LocalJobRunner, String> {
-        let mut progress_file_path = PathBuf::new();
-        progress_file_path.push(&job_dir); progress_file_path.push(mmb::PGRS_FILE_NAME);
-
-        let mut diag_output_file_path = PathBuf::new();
-        diag_output_file_path.push(&job_dir); diag_output_file_path.push(mmb::DOUT_FILE_NAME);
-
+    pub fn create() -> Result<LocalJobRunner, String> {
         Ok(LocalJobRunner{
-            job_dir,
-            cmds_file_path,
-            progress_file_path,
-            diag_output_file_path,
             mmb_process: None,
         })
     }

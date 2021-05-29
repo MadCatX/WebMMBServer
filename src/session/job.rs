@@ -1,6 +1,8 @@
 use std::{collections::HashMap, io::Write};
-use std::path:: PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
+use file_lock::FileLock;
 use uuid::Uuid;
 
 use crate::mmb;
@@ -8,6 +10,7 @@ use crate::server::api;
 
 use super::job_runner::JobRunner;
 use super::local_job_runner::LocalJobRunner;
+use super::pbs_job_runner::PbsJobRunner;
 
 #[derive(Clone)]
 struct AdditionalFileInternal {
@@ -19,6 +22,12 @@ struct FileTransfer {
     pub file_name: String,
     pub last_index: u32,
     pub last_activity: SystemTime,
+}
+
+struct Progress {
+    pub state: mmb::State,
+    pub step: i32,
+    pub total_steps: i32,
 }
 
 #[derive(Clone)]
@@ -56,6 +65,8 @@ pub struct Job {
     raw_commands: Option<String>,
     job_dir: PathBuf,
     cmds_file_path: PathBuf,
+    diag_file_path: PathBuf,
+    progress_file_path: PathBuf,
     runner: Box<dyn JobRunner + Send + Sync>,
     current_stage: Option<i32>,
     created_on: SystemTime,
@@ -219,6 +230,21 @@ fn get_stages(path: &PathBuf, file_name: &str) -> Vec<i32> {
     stages
 }
 
+fn mk_cmds_file_path(mut base_path: PathBuf) -> PathBuf {
+    base_path.push(mmb::CMDS_FILE_NAME);
+    base_path
+}
+
+fn mk_diag_file_path(mut base_path: PathBuf) -> PathBuf {
+    base_path.push(mmb::DOUT_FILE_NAME);
+    base_path
+}
+
+fn mk_progress_file_path(mut base_path: PathBuf) -> PathBuf {
+    base_path.push(mmb::PGRS_FILE_NAME);
+    base_path
+}
+
 fn process_stages(commands: &api::JsonCommands) -> Result<mmb::commands::Stages, String> {
     let stages = match mmb::commands::stages(&commands) {
         Ok(stages) => stages,
@@ -229,6 +255,72 @@ fn process_stages(commands: &api::JsonCommands) -> Result<mmb::commands::Stages,
     }
 
     Ok(stages)
+}
+
+fn read_diagnostics(path: &Path) -> Result<String, String> {
+    if !path.is_file() {
+        return Ok(String::new());
+    }
+
+    match std::fs::File::open(path) {
+        Ok(mut fh) => {
+            let mut buf = String::new();
+            match fh.read_to_string(&mut buf) {
+                Ok(_) => Ok(buf),
+                Err(e) => Err(e.to_string()),
+            }
+        },
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn read_mmb_progress(path: &Path) -> Result<Option<Progress>, String> {
+    /* If the progress file does not exist, it could mean that MMB just has not created it yet */
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let path_str = match path.to_str() {
+        Some(s) => s,
+        None => return Err(String::from("Cannot convert progress file path to str")),
+    };
+
+    let mut locked = match FileLock::lock(path_str, false, false) {
+        Ok(locked) => locked,
+        Err(e) => {
+            /* Error here may indicate that the progress file is locked by MMB */
+            return Ok(None);
+        },
+    };
+
+    let mut s = String::new();
+    let len = match locked.file.read_to_string(&mut s) {
+        Ok(len) => len,
+        Err(e) => return Err(format!("Cannot read progress report file: {}", e)),
+    };
+    if len == 0 {
+        return Ok(None);
+    }
+
+    let json: serde_json::Result<mmb::Progress> = serde_json::from_str(s.as_str());
+    match json {
+        Ok(progress) => Ok(Some(Progress{
+            state: progress.state,
+            step: progress.step,
+            total_steps: progress.total_steps,
+        })),
+        Err(e) => Err(format!("Cannot parse progress file: {}", e)),
+    }
+}
+
+pub fn remove_file(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        match std::fs::remove_file(path) {
+            Ok(_) => return Ok(()),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(())
 }
 
 impl Job {
@@ -256,11 +348,12 @@ impl Job {
             Err(e) => return Err(e),
         };
 
-        let mut cmds_file_path = PathBuf::new();
-        cmds_file_path.push(&job_dir); cmds_file_path.push(mmb::CMDS_FILE_NAME);
+        let cmds_file_path = mk_cmds_file_path(job_dir.clone());
+        let diag_file_path = mk_diag_file_path(job_dir.clone());
+        let progress_file_path = mk_progress_file_path(job_dir.clone());
 
         let runner = Box::new(
-            match LocalJobRunner::create(job_dir.clone(), cmds_file_path.clone()) {
+            match PbsJobRunner::create() {
                 Ok(runner) => runner,
                 Err(e) => return Err(e),
             }
@@ -272,6 +365,8 @@ impl Job {
             raw_commands: src.raw_commands.clone(),
             job_dir,
             cmds_file_path,
+            diag_file_path,
+            progress_file_path,
             runner,
             current_stage: src.current_stage,
             created_on: SystemTime::now(),
@@ -315,11 +410,12 @@ impl Job {
             None
         };
 
-        let mut cmds_file_path = PathBuf::new();
-        cmds_file_path.push(&job_dir); cmds_file_path.push(mmb::CMDS_FILE_NAME);
+        let cmds_file_path = mk_cmds_file_path(job_dir.clone());
+        let diag_file_path = mk_diag_file_path(job_dir.clone());
+        let progress_file_path = mk_progress_file_path(job_dir.clone());
 
         let runner = Box::new(
-            match LocalJobRunner::create(job_dir.clone(), cmds_file_path.clone()) {
+            match PbsJobRunner::create() {
                 Ok(runner) => runner,
                 Err(e) => return Err(e),
             }
@@ -331,6 +427,8 @@ impl Job {
             raw_commands,
             job_dir,
             cmds_file_path,
+            diag_file_path,
+            progress_file_path,
             runner,
             current_stage,
             created_on: std::time::SystemTime::now(),
@@ -351,7 +449,7 @@ impl Job {
     }
 
     pub fn diagnostics(&mut self) -> Result<String, String> {
-        self.runner.diagnostics()
+        read_diagnostics(self.diag_file_path.as_path())
     }
 
     pub fn finish_upload(&mut self, id: Uuid) -> Result<(), String> {
@@ -377,66 +475,51 @@ impl Job {
     }
 
     pub fn info(&mut self) -> Result<JobInfo, String> {
-        let state = self.state()?;
+        let executor_state = self.runner.executor_state()?;
+        let maybe_progress = read_mmb_progress(self.progress_file_path.as_path())?;
 
-        match state {
-            mmb::State::Unknown => Err(String::from("Unknown job state")),
-            mmb::State::NotStarted | mmb::State::Queued =>
+        match maybe_progress {
+            Some(progress) => {
+                let reported_state = {
+                    if executor_state == mmb::State::Running {
+                        /* MMB reports the job has finished but the MMB process is still running
+                           Wait until the MMB process actually terminates */
+                        mmb::State::Running
+                    } else if progress.state == mmb::State::Running &&
+                        executor_state != mmb::State::Running {
+                            /* MMB reports that the job is running but its process has died
+                               Report this as an error */
+                        mmb::State::Failed
+                    } else {
+                        progress.state
+                    }
+                };
+
                 Ok(JobInfo{
                     name: self.name.clone(),
-                    state,
+                    state: reported_state,
+                    available_stages: self.available_stages(),
+                    current_stage: self.current_stage,
+                    created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+                    commands_mode: self.commands_mode(),
+                    progress: Some(JobProgress{
+                        step: progress.step,
+                        total_steps: progress.total_steps,
+                    }),
+                })
+            },
+            None => match executor_state {
+                mmb::State::Unknown => Err(String::from("Unknown job state")),
+                _ => Ok(JobInfo{
+                    name: self.name.clone(),
+                    state: executor_state,
                     available_stages: self.available_stages(),
                     current_stage: self.current_stage,
                     created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
                     commands_mode: self.commands_mode(),
                     progress: None,
                 }),
-            _ => {
-                match self.runner.progress() {
-                    Ok(maybe_progress) => match maybe_progress {
-                        None =>
-                            Ok(JobInfo{
-                                name: self.name.clone(),
-                                state,
-                                available_stages: self.available_stages(),
-                                current_stage: self.current_stage,
-                                created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
-                                commands_mode: self.commands_mode(),
-                                progress: None,
-                            }),
-                        Some(progress) => {
-                            let state_to_report = {
-                                if state == mmb::State::Running {
-                                    /* MMB reports the job has finished but the MMB process is still running
-                                       Wait until the MMB process actually terminates */
-                                    mmb::State::Running
-                                } else if progress.state == mmb::State::Running &&
-                                    state != mmb::State::Running {
-                                        /* MMB reports that the job is running but its process has died
-                                           Report this as an error */
-                                    mmb::State::Failed
-                                } else {
-                                    progress.state
-                                }
-                            };
-
-                            Ok(JobInfo{
-                                name: self.name.clone(),
-                                state: state_to_report,
-                                available_stages: self.available_stages(),
-                                current_stage: self.current_stage,
-                                created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
-                                commands_mode: self.commands_mode(),
-                                progress: Some(JobProgress{
-                                    step: progress.step,
-                                    total_steps: progress.total_steps,
-                                }),
-                            })
-                        },
-                    },
-                    Err(e) => Err(e),
-                }
-            }
+            },
         }
     }
 
@@ -498,15 +581,13 @@ impl Job {
 
         let stages = process_stages(self.commands.as_ref().unwrap())?;
 
+        self.prune_job_dir(stages.first)?;
         match mmb::commands::write(&self.cmds_file_path, self.commands.as_ref().unwrap(), stages.first) {
             Ok(_) => (),
             Err(e) => return Err(e.to_string()),
         };
 
-        match self.prune_job_dir(stages.first) {
-            Ok(_) => self.runner.start(),
-            Err(e) => Err(e),
-        }
+        self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
     }
 
     pub fn start_raw(&mut self, raw_commands: String) -> Result<(), String> {
@@ -519,21 +600,18 @@ impl Job {
             Err(e) => return Err(e),
         };
 
+        self.prune_job_dir(parsed.first_stage)?;
         match mmb::commands::write_raw(&self.cmds_file_path, &raw_commands) {
             Ok(_) => (),
             Err(e) => return Err(e.to_string()),
         }
-
         self.raw_commands = Some(raw_commands);
 
-        match self.prune_job_dir(parsed.first_stage) {
-            Ok(_) => self.runner.start(),
-            Err(e) => Err(e),
-        }
+        self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
     }
 
     pub fn state(&mut self) -> Result<mmb::State, String> {
-        self.runner.state()
+        self.runner.executor_state()
     }
 
     pub fn stop(&mut self) -> Result<(), String> {
@@ -588,8 +666,11 @@ impl Job {
     }
 
     fn prune_job_dir(&self, first_stage: i32) -> Result<(), String> {
-        self.runner.prune_job_dir()?;
-        clear_stages(&self.job_dir, first_stage)
+        remove_file(self.cmds_file_path.as_path());
+        remove_file(self.diag_file_path.as_path());
+        remove_file(self.progress_file_path.as_path());
+        clear_stages(&self.job_dir, first_stage)?;
+        self.runner.prune_job_dir(self.job_dir.clone())
     }
 
     fn terminate_transfer(&mut self, id: &Uuid) {

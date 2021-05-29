@@ -4,6 +4,7 @@ pub mod session_manager;
 
 mod local_job_runner;
 mod job_runner;
+mod pbs_job_runner;
 
 use std::path::PathBuf;
 use uuid::Uuid;

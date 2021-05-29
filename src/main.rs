@@ -4,6 +4,7 @@ extern crate uuid;
 
 mod config;
 mod mmb;
+mod pbs;
 mod server;
 mod session;
 
