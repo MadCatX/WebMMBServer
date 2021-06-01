@@ -34,6 +34,7 @@ WebMMBServer needs a configuration file to launch. A `cfg.json` file needs to be
 * `port`: Port on which the WebMMBServer will listen
 * `domain`: Internet domain name on which the server will run. This must be set correctly for the session cookies to work properly. Set this to `localhost` if you are running a local WEbMMBServer instance that is not accessible over the Internet
 * `require_https`: Require HTTPS connection. If you are not using HTTPS, this must be set to `false`
+* `use_pbs_offloading`: Run jobs through PBS job management system. This requires a working PBS installation on the server.
 
 Example
 
@@ -43,5 +44,7 @@ Example
         "jobs_dir": "/tmp/webmmbsrv",
         "root_dir": "/opt/www/WebMMB",
         "port": 8000,
-        "domain": "localhost"
+        "domain": "localhost",
+        "require_https", true,
+        "use_pbs_offloading": false,
     }
