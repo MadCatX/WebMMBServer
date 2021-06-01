@@ -12,6 +12,7 @@ static mut CONFIG: ConfigContainer = ConfigContainer{
         domain: String::new(),
         port: 0,
         require_https: false,
+        use_pbs_offloading: false,
     },
     is_empty: true,
 };
@@ -51,6 +52,7 @@ pub struct Config {
     pub domain: String,
     pub port: u16,
     pub require_https: bool,
+    pub use_pbs_offloading: bool,
 }
 
 struct ConfigContainer {

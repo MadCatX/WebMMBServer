@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime};
 use file_lock::FileLock;
 use uuid::Uuid;
 
+use crate::config;
 use crate::mmb;
 use crate::server::api;
 
@@ -245,6 +246,22 @@ fn mk_progress_file_path(mut base_path: PathBuf) -> PathBuf {
     base_path
 }
 
+fn mk_runner() -> Result<Box<dyn JobRunner + Sync + Send>, String> {
+    if config::get().use_pbs_offloading {
+        let runner = match PbsJobRunner::create() {
+            Ok(runner) => runner,
+            Err(e) => return Err(e),
+        };
+        Ok(Box::new(runner))
+    } else {
+        let runner = match LocalJobRunner::create() {
+            Ok(runner) => runner,
+            Err(e) => return Err(e),
+        };
+        Ok(Box::new(runner))
+    }
+}
+
 fn process_stages(commands: &api::JsonCommands) -> Result<mmb::commands::Stages, String> {
     let stages = match mmb::commands::stages(&commands) {
         Ok(stages) => stages,
@@ -352,12 +369,10 @@ impl Job {
         let diag_file_path = mk_diag_file_path(job_dir.clone());
         let progress_file_path = mk_progress_file_path(job_dir.clone());
 
-        let runner = Box::new(
-            match PbsJobRunner::create() {
-                Ok(runner) => runner,
-                Err(e) => return Err(e),
-            }
-        );
+        let runner = match mk_runner() {
+            Ok(runner) => runner,
+            Err(e) => return Err(e),
+        };
 
         Ok(Job{
             name,
@@ -414,12 +429,10 @@ impl Job {
         let diag_file_path = mk_diag_file_path(job_dir.clone());
         let progress_file_path = mk_progress_file_path(job_dir.clone());
 
-        let runner = Box::new(
-            match PbsJobRunner::create() {
-                Ok(runner) => runner,
-                Err(e) => return Err(e),
-            }
-        );
+        let runner = match mk_runner() {
+            Ok(runner) => runner,
+            Err(e) => return Err(e),
+        };
 
         Ok(Job{
             name,
