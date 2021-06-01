@@ -521,17 +521,22 @@ impl Job {
                     }),
                 })
             },
-            None => match executor_state {
-                mmb::State::Unknown => Err(String::from("Unknown job state")),
-                _ => Ok(JobInfo{
+            None => {
+                let reported_state = if executor_state == mmb::State::Unknown {
+                    mmb::State::NotStarted
+                    } else {
+                        executor_state
+                };
+
+                Ok(JobInfo{
                     name: self.name.clone(),
-                    state: executor_state,
+                    state: reported_state,
                     available_stages: self.available_stages(),
                     current_stage: self.current_stage,
                     created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
                     commands_mode: self.commands_mode(),
                     progress: None,
-                }),
+                })
             },
         }
     }
@@ -621,10 +626,6 @@ impl Job {
         self.raw_commands = Some(raw_commands);
 
         self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
-    }
-
-    pub fn state(&mut self) -> Result<mmb::State, String> {
-        self.runner.executor_state()
     }
 
     pub fn stop(&mut self) -> Result<(), String> {
