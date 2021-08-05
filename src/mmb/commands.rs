@@ -114,10 +114,11 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
                 Ok(s) => txt += s.as_str(),
                 Err(e) => return Err(e),
             };
-            match filename_to_txt("densityMapFile", &concrete.density_map_file_name) {
+            match filename_to_txt("densityFileName", &concrete.density_map_file_name) {
                 Ok(s) => txt += s.as_str(),
                 Err(e) => return Err(e),
             };
+            txt += "fitToDensity\n";
 
             Ok(txt)
         },
