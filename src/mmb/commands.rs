@@ -31,6 +31,17 @@ impl std::convert::From<&api::BondMobility> for String {
     }
 }
 
+fn filename_to_txt(key: &str, value: &str) -> Result<String, String> {
+    if value.find("/").is_some() {
+        return Err(format!("Invalid character in file name for command {}", key));
+    }
+    if value.find("\\").is_some() {
+        return Err(format!("Invalid character in file name for command {}", key));
+    }
+
+    Ok(keyed_to_txt(key, value))
+}
+
 fn get_value_from_raw<T, F>(lines: &Vec<&str>, key: &'static str, converter: F) -> Option<T> where F: Fn(&str) -> Option<T> {
     let lwr_key = key.to_lowercase();
 
@@ -100,8 +111,14 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
     match common_commands_to_txt(common, stage) {
         Ok(mut txt) => {
             // TODO: Sanitize file names
-            txt += keyed_to_txt("loadSequenceFromPdb", &concrete.structure_file_name).as_str();
-            txt += keyed_to_txt("densityMapFile", &concrete.density_map_file_name).as_str();
+            match filename_to_txt("loadSequenceFromPdb", &concrete.structure_file_name) {
+                Ok(s) => txt += s.as_str(),
+                Err(e) => return Err(e),
+            };
+            match filename_to_txt("densityMapFile", &concrete.density_map_file_name) {
+                Ok(s) => txt += s.as_str(),
+                Err(e) => return Err(e),
+            };
 
             Ok(txt)
         },
