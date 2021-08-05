@@ -14,7 +14,7 @@ use crate::session;
 use crate::session::session_manager::SessionManager;
 use crate::server::api;
 use crate::server::request_handlers;
-use crate::server::responders::{PdbFile, WMSError};
+use crate::server::responders::{DensityFile, PdbFile, WMSError};
 use crate::session::session::Session;
 use crate::server::session_cookie;
 use crate::server::transfer_handlers;
@@ -206,6 +206,32 @@ fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Re
     }
 }
 
+#[get("/density/<session_id>/<job_id>", rank = 1)]
+fn density(session_id: String, job_id: String, mut cookies: Cookies, state: State<AppState>) -> Result<DensityFile, WMSError> {
+    let s = match get_session_authorized(&mut cookies, &state) {
+        Some(s) => s,
+        None => return Err(WMSError{status: Status::Forbidden}),
+    };
+    let sid = match session::str_to_uuid(session_id.as_str()) {
+        Ok(sid) => sid,
+        Err(_) => return Err(WMSError{ status: Status::NotFound }),
+    };
+    let jid = match session::str_to_uuid(job_id.as_str()) {
+        Ok(jid) => jid,
+        Err(_) => return Err(WMSError{ status: Status::NotFound }),
+    };
+
+    match s.job_density_map_file_name(&jid) {
+        Some(name) => {
+            let mut path = s.job_dir(&jid).unwrap();
+            path.push(name);
+
+            Ok(DensityFile{ path })
+        },
+        None => Err(WMSError{ status: Status::NotFound }),
+    }
+}
+
 #[post("/xfr", format = "application/octet-stream", data = "<req>")]
 fn xfr(req: api::FileTransferChunk, mut cookies: Cookies, state: State<AppState>) -> Result<api::ApiResponse, WMSError> {
     let s = match get_session_authorized(&mut cookies, &state) {
@@ -275,6 +301,7 @@ pub fn start() {
                    auth_verify,
                    static_files,
                    api,
+                   density,
                    structure,
                    xfr
                ]

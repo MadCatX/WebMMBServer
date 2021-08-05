@@ -451,6 +451,16 @@ impl Job {
         })
     }
 
+    pub fn density_map_file_name(&self) -> Option<String> {
+        match &self.commands {
+            Some(cmds) => match &cmds.concrete {
+                api::ConcreteCommands::DensityFit(v) => Some(v.density_map_file_name.clone()),
+                _ => None
+            },
+            None => None,
+        }
+    }
+
     pub fn delete_additional_file(&mut self, file_name: String) -> Result<(), String> {
         match self.additional_files.remove(&file_name) {
             Some(_) => {
@@ -463,6 +473,10 @@ impl Job {
 
     pub fn diagnostics(&mut self) -> Result<String, String> {
         read_diagnostics(self.diag_file_path.as_path())
+    }
+
+    pub fn dir(&self) -> PathBuf {
+        self.job_dir.clone()
     }
 
     pub fn finish_upload(&mut self, id: Uuid) -> Result<(), String> {

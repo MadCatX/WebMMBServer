@@ -255,12 +255,30 @@ impl Session {
         }
     }
 
+    pub fn job_density_map_file_name(&self, id: &Uuid) -> Option<String> {
+        let data = self.data.read().unwrap();
+
+        match data.jobs.get(&id) {
+            Some(job) => job.density_map_file_name(),
+            None => None,
+        }
+    }
+
     pub fn job_diagnostics(&self, id: &Uuid) -> Option<Result<String, String>> {
         let mut data = self.data.write().unwrap();
 
         match data.jobs.get_mut(&id) {
             Some(job) => Some(job.diagnostics()),
-            None => None
+            None => None,
+        }
+    }
+
+    pub fn job_dir(&self, id: &Uuid) -> Option<PathBuf> {
+        let mut data = self.data.write().unwrap();
+
+        match data.jobs.get_mut(&id) {
+            Some(job) => Some(job.dir()),
+            None => None,
         }
     }
 

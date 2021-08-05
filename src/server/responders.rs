@@ -58,6 +58,31 @@ impl<'a> Responder<'a> for api::AuthResponse {
     }
 }
 
+pub struct DensityFile {
+    pub path: PathBuf,
+}
+
+impl<'a> Responder<'a> for DensityFile {
+    fn respond_to(self, _: &Request) -> response::Result<'a> {
+        let file_name = match &self.path.file_name() {
+            Some(name) => name.to_string_lossy(),
+            None => return Err(Status::NotFound),
+        };
+        let fh = match std::fs::File::open(&self.path) {
+            Ok(fh) => fh,
+            Err(_) => return Err(Status::NotFound),
+        };
+
+        Ok(Response::build()
+            .status(Status::Ok)
+            .raw_header("Content-Type", "application/octet-stream")
+            .raw_header("Content-Disposition", format!("attachment; filename=\"{}\"", file_name))
+            .sized_body(fh)
+            .finalize()
+        )
+    }
+}
+
 pub struct PdbFile {
     pub path: PathBuf,
 }
@@ -77,6 +102,7 @@ impl<'a> Responder<'a> for PdbFile {
         )
     }
 }
+
 
 #[derive(Debug)]
 pub struct WMSError {
