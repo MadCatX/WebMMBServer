@@ -70,7 +70,7 @@ impl Session {
         }
     }
 
-    pub fn create_job(&self, name: String, synthetic_commands: Option<api::JsonCommands>, raw_commands: Option<String>) -> Result<Uuid, String> {
+    pub fn create_job(&self, name: String, synthetic_commands: Option<api::Commands>, raw_commands: Option<String>) -> Result<Uuid, String> {
         assert!(!(synthetic_commands.is_some() && raw_commands.is_some()));
 
         if name.len() < 1 {
@@ -237,7 +237,7 @@ impl Session {
         }
     }
 
-    pub fn job_commands(&self, id: Uuid) -> Result<Option<api::JsonCommands>, String> {
+    pub fn job_commands(&self, id: Uuid) -> Result<Option<api::Commands>, String> {
         let data = self.data.read().unwrap();
 
         match data.jobs.get(&id) {
@@ -288,7 +288,7 @@ impl Session {
         data.is_logged_in = login_state;
     }
 
-    pub fn start_job(&self, id: &Uuid, commands: api::JsonCommands) -> Result<(), String> {
+    pub fn start_job(&self, id: &Uuid, commands: api::Commands) -> Result<(), String> {
         if !self.has_job(id) {
             return Err(format!("Job with id {} does not exist", id));
         }

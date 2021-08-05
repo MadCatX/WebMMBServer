@@ -38,14 +38,17 @@ pub struct Mobilizer {
 pub type JsonAdvancedParameters = HashMap<String, serde_json::Value>;
 
 #[derive(Deserialize, Serialize, Clone)]
-pub struct JsonCommands {
-    pub base_interaction_scale_factor: f64,
-    pub use_multithreaded_computation: bool,
+pub struct DensityFitCommands {
+    /* Specific commands */
+    pub structure_file_name: String,
+    pub density_map_file_name: String,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct StandardCommands {
+    /* Specific commands */
+    pub base_interaction_scale_factor: i32,
     pub temperature: f64,
-    pub first_stage: i32,
-    pub last_stage: i32,
-    pub reporting_interval: f64,
-    pub num_reporting_intervals: i32,
     pub sequences: Vec<String>,
     pub double_helices: Vec<String>,
     pub base_interactions: Vec<String>,
@@ -53,6 +56,24 @@ pub struct JsonCommands {
     pub mobilizers: Vec<Mobilizer>,
     pub adv_params: JsonAdvancedParameters,
     pub set_default_MD_parameters: bool,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(tag = "job_type")]
+pub enum ConcreteCommands {
+    DensityFit(DensityFitCommands),
+    Standard(StandardCommands),
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Commands {
+    pub first_stage: i32,
+    pub last_stage: i32,
+    pub reporting_interval: f64,
+    pub num_reporting_intervals: i32,
+
+    #[serde(flatten)]
+    pub concrete: ConcreteCommands,
 }
 
 /* Requests */
@@ -121,12 +142,12 @@ pub struct SimpleJobRqData {
 #[derive(Deserialize)]
 pub struct ResumeJobRqData {
     pub id: String,
-    pub commands: JsonCommands,
+    pub commands: Commands,
 }
 #[derive(Deserialize)]
 pub struct StartJobRqData {
     pub id: String,
-    pub commands: JsonCommands,
+    pub commands: Commands,
 }
 #[derive(Deserialize)]
 pub struct StartJobRawRqData {
@@ -208,7 +229,7 @@ pub struct FileTranferAck {
 #[derive(Serialize)]
 pub struct JobCommands {
     pub is_empty: bool,
-    pub commands: Option<JsonCommands>,
+    pub commands: Option<Commands>,
 }
 
 #[derive(Serialize)]

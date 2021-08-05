@@ -62,7 +62,7 @@ pub struct JobProgress {
 
 pub struct Job {
     pub name: String,
-    commands: Option<api::JsonCommands>,
+    commands: Option<api::Commands>,
     raw_commands: Option<String>,
     job_dir: PathBuf,
     cmds_file_path: PathBuf,
@@ -262,7 +262,7 @@ fn mk_runner() -> Result<Box<dyn JobRunner + Sync + Send>, String> {
     }
 }
 
-fn process_stages(commands: &api::JsonCommands) -> Result<mmb::commands::Stages, String> {
+fn process_stages(commands: &api::Commands) -> Result<mmb::commands::Stages, String> {
     let stages = match mmb::commands::stages(&commands) {
         Ok(stages) => stages,
         Err(e) => return Err(e),
@@ -391,7 +391,7 @@ impl Job {
         })
     }
 
-    pub fn commands(&self) -> Option<api::JsonCommands> {
+    pub fn commands(&self) -> Option<api::Commands> {
         self.commands.clone()
     }
 
@@ -412,7 +412,7 @@ impl Job {
         self.raw_commands.clone()
     }
 
-    pub fn create(name: String, job_dir: PathBuf, commands: Option<api::JsonCommands>, raw_commands: Option<String>) -> Result<Job, String> {
+    pub fn create(name: String, job_dir: PathBuf, commands: Option<api::Commands>, raw_commands: Option<String>) -> Result<Job, String> {
         assert!(!(commands.is_some() && raw_commands.is_some()), "Synthetic and raw commands cannot be both specified at the same time");
 
         let current_stage = if commands.is_some() {
@@ -590,7 +590,7 @@ impl Job {
         self.additional_files.iter().map(|(k, v)| { AdditionalFile{name: k.clone(), size: v.size} }).collect()
     }
 
-    pub fn start(&mut self, commands: api::JsonCommands) -> Result<(), String> {
+    pub fn start(&mut self, commands: api::Commands) -> Result<(), String> {
         if self.raw_commands.is_some() {
             return Err(String::from("Job created in raw commands mode cannot be run in synthetic commands mode"));
         }

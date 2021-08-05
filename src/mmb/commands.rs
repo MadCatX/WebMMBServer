@@ -84,34 +84,56 @@ fn mobilizers_to_txt(mobilizers: &Vec<api::Mobilizer>) -> String {
     txt
 }
 
-fn commands_to_txt(commands: &api::JsonCommands, stage: i32) -> Result<String, String> {
+fn common_commands_to_txt(common: &api::Commands, stage: i32) -> Result<String, String> {
     let mut txt = String::new();
 
     txt += keyed_to_txt(KEY_FIRST_STAGE, stage).as_str();
     txt += keyed_to_txt(KEY_LAST_STAGE, stage).as_str();
 
-    txt += keyed_to_txt(KEY_BASE_ITRS_SF, commands.base_interaction_scale_factor).as_str();
-    txt += keyed_to_txt("useMultithreadedComputation", commands.use_multithreaded_computation).as_str();
-    txt += keyed_to_txt("temperature", commands.temperature).as_str();
-    txt += keyed_to_txt("reportingInterval", commands.reporting_interval).as_str();
-    txt += keyed_to_txt(KEY_NUM_REP_INTVLS, commands.num_reporting_intervals).as_str();
-
-    if commands.set_default_MD_parameters {
-        txt += "setDefaultMDParameters";
-    }
-
-    txt += keyless_to_txt(&commands.sequences).as_str();
-    txt += keyless_to_txt(&commands.double_helices).as_str();
-    txt += keyless_to_txt(&commands.base_interactions).as_str();
-    txt += keyless_to_txt(&commands.ntcs).as_str();
-
-    txt += mobilizers_to_txt(&commands.mobilizers).as_str();
-    match advanced_params::to_txt(&commands.adv_params) {
-        Ok(s) => txt += s.as_str(),
-        Err(e) => return Err(e.to_string()),
-    }
+    txt += keyed_to_txt("reportingInterval", common.reporting_interval).as_str();
+    txt += keyed_to_txt(KEY_NUM_REP_INTVLS, common.num_reporting_intervals).as_str();
 
     Ok(txt)
+}
+
+fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFitCommands, stage: i32) -> Result<String, String> {
+    match common_commands_to_txt(common, stage) {
+        Ok(mut txt) => {
+            // TODO: Sanitize file names
+            txt += keyed_to_txt("loadSequenceFromPdb", &concrete.structure_file_name).as_str();
+            txt += keyed_to_txt("densityMapFile", &concrete.density_map_file_name).as_str();
+
+            Ok(txt)
+        },
+        Err(e) => Err(e),
+    }
+}
+
+fn standard_commands_to_txt(common: &api::Commands, concrete: &api::StandardCommands, stage: i32) -> Result<String, String> {
+    match common_commands_to_txt(common, stage) {
+        Ok(mut txt) => {
+            txt += keyed_to_txt(KEY_BASE_ITRS_SF, concrete.base_interaction_scale_factor).as_str();
+            txt += keyed_to_txt("temperature", concrete.temperature).as_str();
+
+            if concrete.set_default_MD_parameters {
+                txt += "setDefaultMDParameters";
+            }
+
+            txt += keyless_to_txt(&concrete.sequences).as_str();
+            txt += keyless_to_txt(&concrete.double_helices).as_str();
+            txt += keyless_to_txt(&concrete.base_interactions).as_str();
+            txt += keyless_to_txt(&concrete.ntcs).as_str();
+
+            txt += mobilizers_to_txt(&concrete.mobilizers).as_str();
+            match advanced_params::to_txt(&concrete.adv_params) {
+                Ok(s) => txt += s.as_str(),
+                Err(e) => return Err(e.to_string()),
+            }
+
+            Ok(txt)
+        },
+        Err(e) => Err(e)
+    }
 }
 
 pub fn parse_raw(raw: &str) -> Result<ParsedRaw, String> {
@@ -155,7 +177,7 @@ pub fn parse_raw(raw: &str) -> Result<ParsedRaw, String> {
     )
 }
 
-pub fn stages(commands: &api::JsonCommands) -> Result<Stages, String> {
+pub fn stages(commands: &api::Commands) -> Result<Stages, String> {
     if commands.last_stage < commands.first_stage {
         return Err(String::from("Last stage number cannot be lower than first stage"))
     }
@@ -163,10 +185,16 @@ pub fn stages(commands: &api::JsonCommands) -> Result<Stages, String> {
     Ok(Stages { first: commands.first_stage, last: commands.last_stage })
 }
 
-pub fn write(path: &PathBuf, mapped: &api::JsonCommands, stage: i32) -> Result<(), String> {
-    let parsed = match commands_to_txt(mapped, stage) {
-        Ok(parsed) => parsed,
-        Err(e) => return Err(format!("Invalid MMB commands: {}", e.to_string())),
+pub fn write(path: &PathBuf, mapped: &api::Commands, stage: i32) -> Result<(), String> {
+    let parsed = match &mapped.concrete {
+        api::ConcreteCommands::DensityFit(v) => match density_fit_commands_to_txt(&mapped, &v, stage) {
+            Ok(parsed) => parsed,
+            Err(e) => return Err(format!("Invalid MMB commands for density fit job: {}", e.to_string())),
+        },
+        api::ConcreteCommands::Standard(v) => match standard_commands_to_txt(&mapped, &v, stage) {
+            Ok(parsed) => parsed,
+            Err(e) => return Err(format!("Invalid MMB commands for standard job: {}", e.to_string())),
+        },
     };
 
     write_raw(path, &parsed)
