@@ -111,7 +111,7 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
     match common_commands_to_txt(common, stage) {
         Ok(mut txt) => {
             // TODO: Sanitize file names
-            match filename_to_txt("loadSequenceFromPdb", &concrete.structure_file_name) {
+            match filename_to_txt("loadSequencesFromPdb", &concrete.structure_file_name) {
                 Ok(s) => txt += s.as_str(),
                 Err(e) => return Err(e),
             };
