@@ -12,13 +12,6 @@ pub enum BondMobility {
     Free,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct ExtraFile {
-    pub key: String,
-    pub name: String,
-    pub data: String,
-}
-
 #[derive(Deserialize)]
 pub enum FileOperationRequestType {
     InitUpload,
