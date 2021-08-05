@@ -110,7 +110,6 @@ fn common_commands_to_txt(common: &api::Commands, stage: i32) -> Result<String, 
 fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFitCommands, stage: i32) -> Result<String, String> {
     match common_commands_to_txt(common, stage) {
         Ok(mut txt) => {
-            // TODO: Sanitize file names
             match filename_to_txt("loadSequencesFromPdb", &concrete.structure_file_name) {
                 Ok(s) => txt += s.as_str(),
                 Err(e) => return Err(e),
