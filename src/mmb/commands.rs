@@ -104,6 +104,9 @@ fn common_commands_to_txt(common: &api::Commands, stage: i32) -> Result<String, 
     txt += keyed_to_txt("reportingInterval", common.reporting_interval).as_str();
     txt += keyed_to_txt(KEY_NUM_REP_INTVLS, common.num_reporting_intervals).as_str();
 
+    txt += keyed_to_txt(KEY_BASE_ITRS_SF, common.base_interaction_scale_factor).as_str();
+    txt += keyed_to_txt("temperature", common.temperature).as_str();
+
     Ok(txt)
 }
 
@@ -129,9 +132,6 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
 fn standard_commands_to_txt(common: &api::Commands, concrete: &api::StandardCommands, stage: i32) -> Result<String, String> {
     match common_commands_to_txt(common, stage) {
         Ok(mut txt) => {
-            txt += keyed_to_txt(KEY_BASE_ITRS_SF, concrete.base_interaction_scale_factor).as_str();
-            txt += keyed_to_txt("temperature", concrete.temperature).as_str();
-
             if concrete.set_default_MD_parameters {
                 txt += "setDefaultMDParameters";
             }

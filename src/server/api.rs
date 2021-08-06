@@ -32,16 +32,14 @@ pub type JsonAdvancedParameters = HashMap<String, serde_json::Value>;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct DensityFitCommands {
-    /* Specific commands */
+    /* Concrete commands */
     pub structure_file_name: String,
     pub density_map_file_name: String,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct StandardCommands {
-    /* Specific commands */
-    pub base_interaction_scale_factor: i32,
-    pub temperature: f64,
+    /* Concrete commands */
     pub sequences: Vec<String>,
     pub double_helices: Vec<String>,
     pub base_interactions: Vec<String>,
@@ -64,6 +62,8 @@ pub struct Commands {
     pub last_stage: i32,
     pub reporting_interval: f64,
     pub num_reporting_intervals: i32,
+    pub base_interaction_scale_factor: i32,
+    pub temperature: f64,
 
     #[serde(flatten)]
     pub concrete: ConcreteCommands,
