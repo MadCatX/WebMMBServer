@@ -121,6 +121,7 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
                 Ok(s) => txt += s.as_str(),
                 Err(e) => return Err(e),
             };
+            txt += mobilizers_to_txt(&concrete.mobilizers).as_str();
             txt += "fitToDensity\n";
 
             Ok(txt)

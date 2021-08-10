@@ -35,6 +35,7 @@ pub struct DensityFitCommands {
     /* Concrete commands */
     pub structure_file_name: String,
     pub density_map_file_name: String,
+    pub mobilizers: Vec<Mobilizer>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
