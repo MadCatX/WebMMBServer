@@ -12,12 +12,27 @@ pub enum BondMobility {
     Free,
 }
 
+#[derive(Deserialize, Serialize, Clone)]
+pub enum CompoundType {
+    DNA,
+    Protein,
+    RNA,
+}
+
 #[derive(Deserialize)]
 pub enum FileOperationRequestType {
     InitUpload,
     FinishUpload,
     CancelUpload,
     Delete,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Compound {
+    pub chain: String,
+    pub ctype: CompoundType,
+    pub sequence: String,
+    pub first_residue_no: i32,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -35,6 +50,7 @@ pub struct DensityFitCommands {
     /* Concrete commands */
     pub structure_file_name: String,
     pub density_map_file_name: String,
+    pub compounds: Vec<Compound>,
     pub mobilizers: Vec<Mobilizer>,
 }
 

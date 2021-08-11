@@ -7,7 +7,7 @@ use serde_json::Result;
 
 use crate::server::api;
 
-const MAX_JSON_SIZE: u64 = 1024;
+const MAX_JSON_SIZE: u64 = 4096;
 const MAX_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 
 pub enum JsonParseError {
