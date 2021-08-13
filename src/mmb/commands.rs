@@ -289,7 +289,7 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
                 Ok(s) => txt += s.as_str(),
                 Err(e) => return Err(e),
             };
-            match filename_to_txt("densityFileName", &concrete.density_map_file_name) {
+            match filename_to_txt("density densityFileName", &concrete.density_map_file_name) {
                 Ok(s) => txt += s.as_str(),
                 Err(e) => return Err(e),
             };
