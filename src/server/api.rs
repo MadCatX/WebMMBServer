@@ -19,6 +19,12 @@ pub enum CompoundType {
     RNA,
 }
 
+#[derive(Deserialize, Serialize, Clone)]
+pub enum EdgeInteraction {
+    WatsonCrick,
+    SugarEdge,
+}
+
 #[derive(Deserialize)]
 pub enum FileOperationRequestType {
     InitUpload,
@@ -28,11 +34,44 @@ pub enum FileOperationRequestType {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
+pub enum Orientation {
+    Cis,
+    Trans,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct BaseInteraction {
+    pub chain_name_1: String,
+    pub res_no_1: i32,
+    pub edge_1: EdgeInteraction,
+    pub chain_name_2: String,
+    pub res_no_2: i32,
+    pub edge_2: EdgeInteraction,
+    pub orientation: Orientation,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Chain {
+    pub name: String,
+    pub auth_name: String,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Compound {
-    pub chain: String,
+    pub chain: Chain,
     pub ctype: CompoundType,
     pub sequence: String,
-    pub first_residue_no: i32,
+    pub residues: Vec<ResidueNumber>,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct DoubleHelix {
+    pub chain_name_1: String,
+    pub first_res_no_1: i32,
+    pub last_res_no_1: i32,
+    pub chain_name_2: String,
+    pub first_res_no_2: i32,
+    pub last_res_no_2: i32,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -41,6 +80,21 @@ pub struct Mobilizer {
     pub chain: Option<String>,
     pub first_residue: Option<i32>,
     pub last_residue: Option<i32>,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct NtC {
+    pub chain_name: String,
+    pub first_res_no: i32,
+    pub last_res_no: i32,
+    pub ntc: String,
+    pub weight: f64,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct ResidueNumber {
+    pub number: i32,
+    pub auth_number: i32,
 }
 
 pub type JsonAdvancedParameters = HashMap<String, serde_json::Value>;
@@ -57,10 +111,10 @@ pub struct DensityFitCommands {
 #[derive(Deserialize, Serialize, Clone)]
 pub struct StandardCommands {
     /* Concrete commands */
-    pub sequences: Vec<String>,
-    pub double_helices: Vec<String>,
-    pub base_interactions: Vec<String>,
-    pub ntcs: Vec<String>,
+    pub compounds: Vec<Compound>,
+    pub double_helices: Vec<DoubleHelix>,
+    pub base_interactions: Vec<BaseInteraction>,
+    pub ntcs: Vec<NtC>,
     pub mobilizers: Vec<Mobilizer>,
     pub adv_params: JsonAdvancedParameters,
     pub set_default_MD_parameters: bool,
