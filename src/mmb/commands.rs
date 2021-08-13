@@ -209,11 +209,6 @@ fn keyed_to_txt<T: std::fmt::Display>(key: &str, value: T) -> String {
     format!("{} {}\n", key, value)
 }
 
-
-fn keyless_to_txt(keyless: &Vec<String>) -> String {
-    keyless.iter().fold(String::new(), |p, c| format!("{}\n{}\n", p, c))
-}
-
 fn mobilizers_to_txt(mobilizers: &Vec<api::Mobilizer>, mapping: &AuthMapping) -> Result<String, String> {
     let mut txt = String::new();
 
