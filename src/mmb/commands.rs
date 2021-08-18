@@ -285,6 +285,10 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
         Ok(mut txt) => {
             let auth_mapping = _mk_auth_mapping(&concrete.compounds);
 
+            if concrete.set_default_MD_parameters {
+                txt += "setDefaultMDParameters\n";
+            }
+
             match filename_to_txt("loadSequencesFromPdb", &concrete.structure_file_name) {
                 Ok(s) => txt += s.as_str(),
                 Err(e) => return Err(e),
@@ -294,6 +298,10 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
                 Err(e) => return Err(e),
             };
             txt += match mobilizers_to_txt(&concrete.mobilizers, &auth_mapping) {
+                Ok(v) => v,
+                Err(e) => return Err(e),
+            }.as_str();
+            txt += match ntcs_to_txt(&concrete.ntcs, &auth_mapping) {
                 Ok(v) => v,
                 Err(e) => return Err(e),
             }.as_str();
@@ -309,7 +317,7 @@ fn standard_commands_to_txt(common: &api::Commands, concrete: &api::StandardComm
     match common_commands_to_txt(common, stage) {
         Ok(mut txt) => {
             if concrete.set_default_MD_parameters {
-                txt += "setDefaultMDParameters";
+                txt += "setDefaultMDParameters\n";
             }
 
             let auth_mapping = _mk_auth_mapping(&concrete.compounds);

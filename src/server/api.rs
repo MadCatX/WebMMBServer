@@ -106,6 +106,8 @@ pub struct DensityFitCommands {
     pub density_map_file_name: String,
     pub compounds: Vec<Compound>,
     pub mobilizers: Vec<Mobilizer>,
+    pub ntcs: Vec<NtC>,
+    pub set_default_MD_parameters: bool,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
