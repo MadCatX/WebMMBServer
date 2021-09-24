@@ -168,6 +168,12 @@ pub fn file_operation(session: Arc<Session>, data: serde_json::Value) -> ApiResp
 
     match data.req_type {
         api::FileOperationRequestType::InitUpload => {
+            if data.file_name.len() < 1 {
+                return ApiResponse::fail(Status::BadRequest, String::from("No file name"));
+            }
+            if data.file_name.contains("/") || data.file_name.contains("\\") {
+                return ApiResponse::fail(Status::BadRequest, String::from("Invalid file name"));
+            }
             match session.init_upload(&job_id, data.file_name) {
                 Ok(id) => {
                     let resp = api::FileTransferAck{id: uuid_to_str(&id)};

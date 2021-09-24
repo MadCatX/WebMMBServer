@@ -171,6 +171,9 @@ fn double_helices_to_txt(dhs: &Vec<api::DoubleHelix>, mapping: &AuthMapping) -> 
 }
 
 fn filename_to_txt(key: &str, value: &str) -> Result<String, String> {
+    if value.len() < 1 {
+        return Err(String::from("File name of zero length"));
+    }
     if value.find("/").is_some() {
         return Err(format!("Invalid character in file name for command {}", key));
     }
