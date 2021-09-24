@@ -102,6 +102,14 @@ pub fn clone_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
         Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
     };
 
+    if session.has_job_by_name(&parsed.name) {
+        return ApiResponse::fail(Status::BadRequest, format!("Job named {} already exists", parsed.name));
+    }
+
+    if parsed.name.len() < 1 {
+        return ApiResponse::fail(Status::BadRequest, String::from("Job must have a name"));
+    }
+
     match session.clone_job(parsed.name, &src_id) {
         Ok(id) => {
             let resp = api::JobCreated{id: session::uuid_to_str(&id)};
@@ -119,6 +127,10 @@ pub fn create_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
 
     if session.has_job_by_name(&parsed.name) {
         return ApiResponse::fail(Status::BadRequest, format!("Job named {} already exists", parsed.name));
+    }
+
+    if parsed.name.len() < 1 {
+        return ApiResponse::fail(Status::BadRequest, String::from("Job must have a name"));
     }
 
     match session.create_job(parsed.name, None, None) {
