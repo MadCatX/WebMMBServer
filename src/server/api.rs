@@ -288,7 +288,7 @@ pub struct ExampleListItem {
 pub type ExampleList = Vec<ExampleListItem>;
 
 #[derive(Serialize)]
-pub struct FileTranferAck {
+pub struct FileTransferAck {
     pub id: String,
 }
 

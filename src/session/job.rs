@@ -605,6 +605,15 @@ impl Job {
     }
 
     pub fn start(&mut self, commands: api::Commands) -> Result<(), String> {
+        match self.info() {
+            Ok(info) => {
+                if info.state == mmb::State::Running {
+                    return Err(String::from("Job is already running"))
+                }
+            },
+            Err(_) => (),
+        }
+
         if self.raw_commands.is_some() {
             return Err(String::from("Job created in raw commands mode cannot be run in synthetic commands mode"));
         }
@@ -623,6 +632,15 @@ impl Job {
     }
 
     pub fn start_raw(&mut self, raw_commands: String) -> Result<(), String> {
+        match self.info() {
+            Ok(info) => {
+                if info.state == mmb::State::Running {
+                    return Err(String::from("Job is already running"))
+                }
+            },
+            Err(_) => (),
+        }
+
         if self.commands.is_some() {
             return Err(String::from("Job created in synthetic commands mode cannot be run in raw commands mode"));
         }

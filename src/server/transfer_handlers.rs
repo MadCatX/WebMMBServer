@@ -20,7 +20,7 @@ pub fn chunk(session: Arc<Session>, chunk: api::FileTransferChunk) -> api::ApiRe
 
     match session.upload_chunk(&job_id, &transfer_id, chunk.index, chunk.data) {
         Ok(()) => {
-            let resp = api::FileTranferAck{id: session::uuid_to_str(&transfer_id)};
+            let resp = api::FileTransferAck{id: session::uuid_to_str(&transfer_id)};
             api::ApiResponse::ok(serde_json::to_value(resp).unwrap())
         },
         Err(e) => api::ApiResponse::fail(Status::BadRequest, e),
