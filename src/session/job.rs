@@ -355,6 +355,10 @@ impl Job {
         }
     }
 
+    pub fn check_retire(&mut self) {
+        self.runner.executor_state();
+    }
+
     pub fn clone(name: String, job_dir: PathBuf, src: &Job) -> Result<Job, String> {
         if !src.file_transfers.is_empty() {
             return Err(String::from("Jobs with active file transfers cannot be cloned"));

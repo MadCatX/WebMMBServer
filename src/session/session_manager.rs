@@ -45,6 +45,7 @@ impl<'a> SessionManager {
                                 while session_handle.is_logged_in() {
                                     thread::sleep(Duration::new(10, 0));
                                     session_handle.terminate_hung_uploads();
+                                    session_handle.retire_ended_jobs();
                                 }
 
                                 println!("Session watchdog exited");

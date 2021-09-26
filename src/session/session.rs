@@ -300,6 +300,13 @@ impl Session {
         }
     }
 
+    pub fn retire_ended_jobs(&self) {
+        let mut data = self.data.write().unwrap();
+        for job in data.jobs.values_mut() {
+            job.check_retire();
+        }
+    }
+
     pub fn set_login_state(&self, login_state: bool) {
         let mut data = self.data.write().unwrap();
 
