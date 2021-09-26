@@ -179,6 +179,29 @@ fn static_files(file: PathBuf) -> Option<NamedFile> {
     NamedFile::open(Path::new("assets/").join(file)).ok()
 }
 
+#[get("/additional_file/<session_id>/<job_id>/<file_name>")]
+fn additional_file(session_id: String, job_id: String, file_name: String, mut cookies: Cookies, state: State<AppState>) -> Result<NamedFile, WMSError> {
+    let s = match get_session_authorized(&mut cookies, &state) {
+        Some(s) => s,
+        None => return Err(WMSError{status: Status::Forbidden}),
+    };
+    let sid = match session::str_to_uuid(session_id.as_str()) {
+        Ok(sid) => sid,
+        Err(_) => return Err(WMSError{ status: Status::NotFound }),
+    };
+    let jid = match session::str_to_uuid(job_id.as_str()) {
+        Ok(jid) => jid,
+        Err(_) => return Err(WMSError{ status: Status::NotFound }),
+    };
+
+    let mut path = s.job_dir(&jid).unwrap();
+    path.push(file_name);
+    match NamedFile::open(path) {
+        Ok(f) => Ok(f),
+        Err(_) => Err(WMSError{ status: Status::NotFound } ),
+    }
+}
+
 #[post("/api", format = "application/json", data = "<req>")]
 fn api(req: api::ApiRequest, mut cookies: Cookies, state: State<AppState>) -> Result<api::ApiResponse, WMSError> {
     let s = match get_session_authorized(&mut cookies, &state) {
@@ -303,7 +326,8 @@ pub fn start() {
                    api,
                    density,
                    structure,
-                   xfr
+                   xfr,
+                   additional_file,
                ]
         )
         .manage(AppState{
