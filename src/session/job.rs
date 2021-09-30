@@ -632,6 +632,7 @@ impl Job {
             Err(e) => return Err(e.to_string()),
         };
 
+        self.current_stage = Some(stages.first);
         self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
     }
 
@@ -660,6 +661,7 @@ impl Job {
             Err(e) => return Err(e.to_string()),
         }
         self.raw_commands = Some(raw_commands);
+        self.current_stage = Some(parsed.first_stage);
 
         self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
     }
