@@ -245,9 +245,9 @@ fn mobilizers_to_txt(mobilizers: &Vec<api::Mobilizer>, mapping: &AuthMapping) ->
     Ok(txt)
 }
 
-fn ntcs_to_txt(ntcs: &Vec<api::NtC>, mapping: &AuthMapping) -> Result<String, String> {
+fn ntcs_to_txt(ntcs: &api::NtCs, mapping: &AuthMapping) -> Result<String, String> {
     let mut txt = String::new();
-    for ntc in ntcs.iter() {
+    for ntc in ntcs.conformations.iter() {
         let ch = match mapping.get(&ntc.chain_name) {
             Some(v) => v,
             None => return Err(String::from("No mapping for chain name")),
@@ -261,10 +261,11 @@ fn ntcs_to_txt(ntcs: &Vec<api::NtC>, mapping: &AuthMapping) -> Result<String, St
             None => return Err(String::from("Cannot get auth_res_no for last_res_no")),
         };
         txt += format!(
-            "NtC {} {} {} {} {}\n",
-            ch.auth_name, first_res_no_auth, last_res_no_auth, ntc.ntc, ntc.weight
+            "NtC {} {} {} {}\n",
+            ch.auth_name, first_res_no_auth, last_res_no_auth, ntc.ntc
         ).as_str();
     }
+    txt += format!("NtCForceScaleFactor {}\n", ntcs.force_scale_factor).as_str();
     Ok(txt)
 }
 

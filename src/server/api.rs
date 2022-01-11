@@ -83,12 +83,18 @@ pub struct Mobilizer {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
-pub struct NtC {
+pub struct NtCConformation {
     pub chain_name: String,
     pub first_res_no: i32,
     pub last_res_no: i32,
     pub ntc: String,
     pub weight: f64,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct NtCs {
+    pub conformations: Vec<NtCConformation>,
+    pub force_scale_factor: f64,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -106,7 +112,7 @@ pub struct DensityFitCommands {
     pub density_map_file_name: String,
     pub compounds: Vec<Compound>,
     pub mobilizers: Vec<Mobilizer>,
-    pub ntcs: Vec<NtC>,
+    pub ntcs: NtCs,
     pub set_default_MD_parameters: bool,
 }
 
@@ -116,7 +122,7 @@ pub struct StandardCommands {
     pub compounds: Vec<Compound>,
     pub double_helices: Vec<DoubleHelix>,
     pub base_interactions: Vec<BaseInteraction>,
-    pub ntcs: Vec<NtC>,
+    pub ntcs: NtCs,
     pub mobilizers: Vec<Mobilizer>,
     pub adv_params: JsonAdvancedParameters,
     pub set_default_MD_parameters: bool,
