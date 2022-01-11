@@ -247,6 +247,10 @@ fn mobilizers_to_txt(mobilizers: &Vec<api::Mobilizer>, mapping: &AuthMapping) ->
 
 fn ntcs_to_txt(ntcs: &api::NtCs, mapping: &AuthMapping) -> Result<String, String> {
     let mut txt = String::new();
+    if ntcs.conformations.len() == 0 {
+        return Ok(txt);
+    }
+
     for ntc in ntcs.conformations.iter() {
         let ch = match mapping.get(&ntc.chain_name) {
             Some(v) => v,
