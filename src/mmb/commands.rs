@@ -18,11 +18,6 @@ pub struct ParsedRaw {
     pub num_reporting_intervals: i32,
 }
 
-pub struct Stages {
-    pub first: i32,
-    pub last: i32,
-}
-
 struct AuthChainMapping {
     pub auth_name: String,
     pub auth_residues: Vec<i32>,
@@ -44,7 +39,7 @@ impl std::fmt::Display for api::EdgeInteraction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             api::EdgeInteraction::WatsonCrick => write!(f, "WatsonCrick"),
-            api::EdgeInteraction::SugarEdge=> write!(f, "SugarEdge"),
+            api::EdgeInteraction::SugarEdge => write!(f, "SugarEdge"),
         }
     }
 }
@@ -273,11 +268,11 @@ fn ntcs_to_txt(ntcs: &api::NtCs, mapping: &AuthMapping) -> Result<String, String
     Ok(txt)
 }
 
-fn common_commands_to_txt(common: &api::Commands, stage: i32) -> Result<String, String> {
+fn common_commands_to_txt(common: &api::Commands) -> Result<String, String> {
     let mut txt = String::new();
 
-    txt += keyed_to_txt(KEY_FIRST_STAGE, stage).as_str();
-    txt += keyed_to_txt(KEY_LAST_STAGE, stage).as_str();
+    txt += keyed_to_txt(KEY_FIRST_STAGE, common.stage).as_str();
+    txt += keyed_to_txt(KEY_LAST_STAGE, common.stage).as_str();
 
     txt += keyed_to_txt("reportingInterval", common.reporting_interval).as_str();
     txt += keyed_to_txt(KEY_NUM_REP_INTVLS, common.num_reporting_intervals).as_str();
@@ -288,8 +283,8 @@ fn common_commands_to_txt(common: &api::Commands, stage: i32) -> Result<String, 
     Ok(txt)
 }
 
-fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFitCommands, stage: i32) -> Result<String, String> {
-    match common_commands_to_txt(common, stage) {
+fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFitCommands) -> Result<String, String> {
+    match common_commands_to_txt(common) {
         Ok(mut txt) => {
             let auth_mapping = _mk_auth_mapping(&concrete.compounds);
 
@@ -321,8 +316,8 @@ fn density_fit_commands_to_txt(common: &api::Commands, concrete: &api::DensityFi
     }
 }
 
-fn standard_commands_to_txt(common: &api::Commands, concrete: &api::StandardCommands, stage: i32) -> Result<String, String> {
-    match common_commands_to_txt(common, stage) {
+fn standard_commands_to_txt(common: &api::Commands, concrete: &api::StandardCommands) -> Result<String, String> {
+    match common_commands_to_txt(common) {
         Ok(mut txt) => {
             if concrete.set_default_MD_parameters {
                 txt += "setDefaultMDParameters\n";
@@ -403,27 +398,19 @@ pub fn parse_raw(raw: &str) -> Result<ParsedRaw, String> {
     )
 }
 
-pub fn stages(commands: &api::Commands) -> Result<Stages, String> {
-    if commands.last_stage < commands.first_stage {
-        return Err(String::from("Last stage number cannot be lower than first stage"))
-    }
-
-    Ok(Stages { first: commands.first_stage, last: commands.last_stage })
-}
-
-pub fn write(path: &PathBuf, mapped: &api::Commands, stage: i32) -> Result<(), String> {
-    let parsed = match &mapped.concrete {
-        api::ConcreteCommands::DensityFit(v) => match density_fit_commands_to_txt(&mapped, &v, stage) {
-            Ok(parsed) => parsed,
+pub fn write(path: &PathBuf, commands: &api::Commands) -> Result<(), String> {
+    let raw_commands = match &commands.concrete {
+        api::ConcreteCommands::DensityFit(v) => match density_fit_commands_to_txt(&commands, &v) {
+            Ok(raw_commands) => raw_commands,
             Err(e) => return Err(format!("Invalid MMB commands for density fit job: {}", e.to_string())),
         },
-        api::ConcreteCommands::Standard(v) => match standard_commands_to_txt(&mapped, &v, stage) {
-            Ok(parsed) => parsed,
+        api::ConcreteCommands::Standard(v) => match standard_commands_to_txt(&commands, &v) {
+            Ok(raw_commands) => raw_commands,
             Err(e) => return Err(format!("Invalid MMB commands for standard job: {}", e.to_string())),
         },
     };
 
-    write_raw(path, &parsed)
+    write_raw(path, &raw_commands)
 }
 
 pub fn write_raw(path: &PathBuf, raw_commands: &str) -> Result<(), String> {

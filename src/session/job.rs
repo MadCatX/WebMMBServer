@@ -5,9 +5,9 @@ use std::time::{Duration, SystemTime};
 use file_lock::FileLock;
 use uuid::Uuid;
 
+use crate::server::api;
 use crate::config;
 use crate::mmb;
-use crate::server::api;
 
 use super::job_runner::JobRunner;
 use super::local_job_runner::LocalJobRunner;
@@ -31,13 +31,6 @@ struct Progress {
     pub total_steps: i32,
 }
 
-#[derive(Clone)]
-pub enum CommandsMode {
-    None,
-    Synthetic,
-    Raw,
-}
-
 pub struct AdditionalFile {
     pub name: String,
     pub size: u64,
@@ -47,10 +40,10 @@ pub struct AdditionalFile {
 pub struct JobInfo {
     pub name: String,
     pub state: mmb::State,
-    pub available_stages: Vec<i32>,
-    pub current_stage: Option<i32>,
+    pub first_stage: i32,
+    pub last_stage: i32,
     pub created_on: u128,
-    pub commands_mode: CommandsMode,
+    pub commands_mode: api::JobCommandsMode,
     pub progress: Option<JobProgress>,
 }
 
@@ -69,7 +62,6 @@ pub struct Job {
     diag_file_path: PathBuf,
     progress_file_path: PathBuf,
     runner: Box<dyn JobRunner + Send + Sync>,
-    current_stage: Option<i32>,
     created_on: SystemTime,
     file_transfers: HashMap<Uuid, FileTransfer>,
     additional_files: HashMap<String, AdditionalFileInternal>,
@@ -262,18 +254,6 @@ fn mk_runner() -> Result<Box<dyn JobRunner + Sync + Send>, String> {
     }
 }
 
-fn process_stages(commands: &api::Commands) -> Result<mmb::commands::Stages, String> {
-    let stages = match mmb::commands::stages(&commands) {
-        Ok(stages) => stages,
-        Err(e) => return Err(e),
-    };
-    if stages.first != stages.last {
-        return Err(String::from("Calculation spanning over multiple stages is not supported"));
-    }
-
-    Ok(stages)
-}
-
 fn read_diagnostics(path: &Path) -> Result<String, String> {
     if !path.is_file() {
         return Ok(String::new());
@@ -387,7 +367,6 @@ impl Job {
             diag_file_path,
             progress_file_path,
             runner,
-            current_stage: src.current_stage,
             created_on: SystemTime::now(),
             file_transfers: HashMap::new(),
             additional_files: src.additional_files.clone(),
@@ -399,17 +378,17 @@ impl Job {
         self.commands.clone()
     }
 
-    pub fn commands_mode(&self) -> CommandsMode {
+    pub fn commands_mode(&self) -> api::JobCommandsMode {
         assert!(!(self.commands.is_some() && self.raw_commands.is_some()), "Synthetic and raw commands cannot be both specified at the same time");
 
         if self.commands.is_some() {
-            return CommandsMode::Synthetic;
+            return api::JobCommandsMode::Synthetic;
         }
         if self.raw_commands.is_some() {
-            return CommandsMode::Raw;
+            return api::JobCommandsMode::Raw;
         }
 
-        CommandsMode::None
+        api::JobCommandsMode::None
     }
 
     pub fn commands_raw(&self) -> Option<String> {
@@ -418,16 +397,6 @@ impl Job {
 
     pub fn create(name: String, job_dir: PathBuf, commands: Option<api::Commands>, raw_commands: Option<String>) -> Result<Job, String> {
         assert!(!(commands.is_some() && raw_commands.is_some()), "Synthetic and raw commands cannot be both specified at the same time");
-
-        let current_stage = if commands.is_some() {
-            let stages = process_stages(commands.as_ref().unwrap())?;
-            Some(stages.first)
-        } else if raw_commands.is_some() {
-            let parsed = mmb::commands::parse_raw(raw_commands.as_ref().unwrap())?;
-            Some(parsed.first_stage)
-        } else {
-            None
-        };
 
         let cmds_file_path = mk_cmds_file_path(job_dir.clone());
         let diag_file_path = mk_diag_file_path(job_dir.clone());
@@ -447,7 +416,6 @@ impl Job {
             diag_file_path,
             progress_file_path,
             runner,
-            current_stage,
             created_on: std::time::SystemTime::now(),
             file_transfers: HashMap::new(),
             additional_files: HashMap::new(),
@@ -509,6 +477,26 @@ impl Job {
         let executor_state = self.runner.executor_state()?;
         let maybe_progress = read_mmb_progress(self.progress_file_path.as_path())?;
 
+        let avail_stages = self.available_stages();
+
+        let (first_stage, last_stage) = if avail_stages.is_empty() {
+             (0, 0)
+        } else {
+            /* Stages must be contiguous. If there is a discontinuity we just
+             * discard the stages past the discontinuity */
+            let first = *avail_stages.first().unwrap();
+            let mut last = first;
+
+            let slice = &avail_stages[1..avail_stages.len()];
+            for n in slice {
+                if last + 1 != *n {
+                    break;
+                }
+                last = *n;
+            }
+            (first, last)
+        };
+
         match maybe_progress {
             Some(progress) => {
                 let reported_state = {
@@ -529,8 +517,8 @@ impl Job {
                 Ok(JobInfo{
                     name: self.name.clone(),
                     state: reported_state,
-                    available_stages: self.available_stages(),
-                    current_stage: self.current_stage,
+                    first_stage,
+                    last_stage,
                     created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
                     commands_mode: self.commands_mode(),
                     progress: Some(JobProgress{
@@ -549,8 +537,8 @@ impl Job {
                 Ok(JobInfo{
                     name: self.name.clone(),
                     state: reported_state,
-                    available_stages: self.available_stages(),
-                    current_stage: self.current_stage,
+                    first_stage,
+                    last_stage,
                     created_on: self.created_on.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
                     commands_mode: self.commands_mode(),
                     progress: None,
@@ -623,16 +611,12 @@ impl Job {
         }
 
         self.commands = Some(commands);
-
-        let stages = process_stages(self.commands.as_ref().unwrap())?;
-
-        self.prune_job_dir(stages.first)?;
-        match mmb::commands::write(&self.cmds_file_path, self.commands.as_ref().unwrap(), stages.first) {
+        self.prune_job_dir(self.commands.as_ref().unwrap().stage)?;
+        match mmb::commands::write(&self.cmds_file_path, self.commands.as_ref().unwrap()) {
             Ok(_) => (),
             Err(e) => return Err(e.to_string()),
         };
 
-        self.current_stage = Some(stages.first);
         self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
     }
 
@@ -661,7 +645,6 @@ impl Job {
             Err(e) => return Err(e.to_string()),
         }
         self.raw_commands = Some(raw_commands);
-        self.current_stage = Some(parsed.first_stage);
 
         self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
     }

@@ -17,21 +17,18 @@ fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
         id: session::uuid_to_str(id),
         name: info.name,
         state: mmb_state_to_job_state(info.state),
-        available_stages: info.available_stages,
-        current_stage: info.current_stage,
+        first_stage: info.first_stage,
+        last_stage: info.last_stage,
         created_on: info.created_on.to_string(),
-        commands_mode: match info.commands_mode {
-            session::job::CommandsMode::Synthetic => api::JobCommandsMode::Synthetic,
-            session::job::CommandsMode::Raw => api::JobCommandsMode::Raw,
-            session::job::CommandsMode::None => api::JobCommandsMode::None,
-        },
+        commands_mode: info.commands_mode,
         progress: match info.progress {
-            Some(progress) =>
+            Some(progress) => {
                 Some(api::JobProgress{
                     step: step_to_str(progress.step),
                     total_steps: progress.total_steps,
-                }),
-             None => None,
+                })
+            },
+            None => None,
         }
     }
 }
@@ -156,60 +153,64 @@ pub fn delete_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
 
 pub fn file_operation(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
     let parsed: serde_json::Result<api::FileOperationRqData> = serde_json::from_value(data);
-    if parsed.is_err() {
-        return ApiResponse::fail(Status::BadRequest, String::from("Invalid upload file request"));
-    }
 
-    let data = parsed.unwrap();
-    let job_id = match Uuid::from_str(data.job_id.as_str()) {
-        Ok(id) => id,
-        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
-    };
+    match parsed {
+        Ok(data) => {
+            let job_id = match Uuid::from_str(data.job_id.as_str()) {
+                Ok(id) => id,
+                Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+            };
 
-    match data.req_type {
-        api::FileOperationRequestType::InitUpload => {
-            if data.file_name.len() < 1 {
-                return ApiResponse::fail(Status::BadRequest, String::from("No file name"));
-            }
-            if data.file_name.contains("/") || data.file_name.contains("\\") {
-                return ApiResponse::fail(Status::BadRequest, String::from("Invalid file name"));
-            }
-            match session.init_upload(&job_id, data.file_name) {
-                Ok(id) => {
-                    let resp = api::FileTransferAck{id: uuid_to_str(&id)};
-                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
+            match data.req_type {
+                api::FileOperationRequestType::InitUpload => {
+                    if data.file_name.len() < 1 {
+                        return ApiResponse::fail(Status::BadRequest, String::from("No file name"));
+                    }
+                    if data.file_name.contains("/") || data.file_name.contains("\\") {
+                        return ApiResponse::fail(Status::BadRequest, String::from("Invalid file name"));
+                    }
+                    match session.init_upload(&job_id, data.file_name) {
+                        Ok(id) => {
+                            let resp = api::FileTransferAck{id: uuid_to_str(&id)};
+                            match serde_json::to_value(resp) {
+                                Ok(v) => return ApiResponse::ok(v),
+                                Err(_) => return ApiResponse::fail(Status::InternalServerError, String::from("Cannot convert UUID to string")),
+                            }
+                        },
+                        Err(e) => return ApiResponse::fail(Status::BadRequest, e)
+                    }
                 },
-                Err(e) => ApiResponse::fail(Status::BadRequest, e)
-            }
-        },
-        api::FileOperationRequestType::FinishUpload => {
-            let transfer_id = match Uuid::from_str(data.transfer_id.as_str()) {
-                Ok(id) => id,
-                Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
-            };
+                api::FileOperationRequestType::FinishUpload => {
+                    let transfer_id = match Uuid::from_str(data.transfer_id.as_str()) {
+                        Ok(id) => id,
+                        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+                    };
 
-            match session.finish_upload(job_id, transfer_id) {
-                Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
-                Err(e) => ApiResponse::fail(Status::BadRequest, e),
-            }
-        },
-        api::FileOperationRequestType::Delete => {
-            match session.delete_additional_file(&job_id, data.file_name) {
-                Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
-                Err(e) => ApiResponse::fail(Status::BadRequest, e),
-            }
-        },
-        api::FileOperationRequestType::CancelUpload => {
-            let transfer_id = match Uuid::from_str(data.transfer_id.as_str()) {
-                Ok(id) => id,
-                Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
-            };
+                    match session.finish_upload(job_id, transfer_id) {
+                        Ok(()) => return ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
+                        Err(e) => return ApiResponse::fail(Status::BadRequest, e),
+                    }
+                },
+                api::FileOperationRequestType::Delete => {
+                    match session.delete_additional_file(&job_id, data.file_name) {
+                        Ok(()) => return ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
+                        Err(e) => return ApiResponse::fail(Status::BadRequest, e),
+                    }
+                },
+                api::FileOperationRequestType::CancelUpload => {
+                    let transfer_id = match Uuid::from_str(data.transfer_id.as_str()) {
+                        Ok(id) => id,
+                        Err(e) => return ApiResponse::fail(Status::BadRequest, e.to_string()),
+                    };
 
-            match session.cancel_upload(&job_id, &transfer_id) {
-                Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
-                Err(e) => ApiResponse::fail(Status::BadRequest, e),
+                    match session.cancel_upload(&job_id, &transfer_id) {
+                        Ok(()) => return ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
+                        Err(e) => return ApiResponse::fail(Status::BadRequest, e),
+                    }
+                },
             }
         },
+        Err(_) => ApiResponse::fail(Status::BadRequest, String::from("Invalid upload file request")),
     }
 }
 
@@ -268,43 +269,40 @@ pub fn job_commands(session: Arc<Session>, data: serde_json::Value) -> ApiRespon
         Err(e) => return ApiResponse::fail(Status::BadRequest, e),
     };
 
-    match session.job_commands(id) {
-        Ok(v) => {
-            match v {
-                Some(commands) => {
-                    let resp = api::JobCommands{is_empty: false, commands: Some(commands)};
-                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
-                },
-                None => {
-                    let resp = api::JobCommands{is_empty: true, commands: None};
-                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
-                }
-            }
-        },
-        Err(e) => ApiResponse::fail(Status::BadRequest, e),
-    }
-}
-
-pub fn job_commands_raw(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
-    let id = match handle_simple_rq_data(data) {
-        Ok(id) => id,
-        Err(e) => return ApiResponse::fail(Status::BadRequest, e),
+    let mode = match session.job_commands_mode(id) {
+        Some(mode) => mode,
+        None => return ApiResponse::fail(Status::BadRequest, String::from("Unknown job id")),
     };
 
-    match session.job_commands_raw(id) {
-        Ok(v) => {
-            match v {
-                Some(commands) => {
-                    let resp = api::JobCommandsRaw{is_empty: false, commands: Some(commands)};
-                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
+    match mode {
+        api::JobCommandsMode::None => {
+            let resp = api::JobCommands::None(api::JobCommandsNone{});
+            ApiResponse::ok(serde_json::to_value(resp).unwrap())
+        }
+        api::JobCommandsMode::Synthetic => {
+            match session.job_commands(id) {
+                Ok(commands) => match commands {
+                    Some(commands) => {
+                        let resp = api::JobCommands::Synthetic(api::JobCommandsSynthetic{ commands });
+                        ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                    },
+                    None => ApiResponse::fail(Status::InternalServerError, String::from("No commands")),
                 },
-                None => {
-                    let resp = api::JobCommandsRaw{is_empty: true, commands: None};
-                    ApiResponse::ok(serde_json::to_value(resp).unwrap())
-                }
+                Err(e) => ApiResponse::fail(Status::InternalServerError, e),
             }
         },
-        Err(e) => ApiResponse::fail(Status::BadRequest, e),
+        api::JobCommandsMode::Raw => {
+            match session.job_commands_raw(id) {
+                Ok(commands) => match commands {
+                    Some(commands) => {
+                        let resp = api::JobCommands::Raw(api::JobCommandsRaw{ commands });
+                        ApiResponse::ok(serde_json::to_value(resp).unwrap())
+                    },
+                    None => ApiResponse::fail(Status::InternalServerError, String::from("No commands")),
+                },
+                Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+            }
+        },
     }
 }
 
@@ -348,35 +346,29 @@ pub fn session_info(session: Arc<Session>) -> ApiResponse {
 pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
     println!("start_job hander: {}", data);
     let parsed: serde_json::Result<api::StartJobRqData> = serde_json::from_value(data);
-    if parsed.is_err() {
-        return ApiResponse::fail(Status::BadRequest, String::from("Invalid start job request"));
-    }
+    let start_data = match parsed {
+        Ok(data) => data,
+        Err(_) => return ApiResponse::fail(Status::BadRequest, String::from("Invalid start job request")),
+    };
 
-    let start_data = parsed.unwrap();
     let id = match Uuid::parse_str(&start_data.id) {
         Ok(v) => v,
         Err(_) => return ApiResponse::fail(Status::BadRequest, String::from("Malformed job id")),
     };
-    match session.start_job(&id, start_data.commands) {
-        Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
-        Err(e) => ApiResponse::fail(Status::BadRequest, e),
-    }
-}
 
-pub fn start_job_raw(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
-    let parsed: serde_json::Result<api::StartJobRawRqData> = serde_json::from_value(data);
-    if parsed.is_err() {
-        return ApiResponse::fail(Status::BadRequest, String::from("Invalid start raw job request"));
-    }
-
-    let start_data_raw = parsed.unwrap();
-    let id = match Uuid::parse_str(&start_data_raw.id) {
-        Ok(v) => v,
-        Err(_) => return ApiResponse::fail(Status::BadRequest, String::from("Malformed job id")),
-    };
-    match session.start_job_raw(&id, start_data_raw.commands) {
-        Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
-        Err(e) => ApiResponse::fail(Status::BadRequest, e),
+    match start_data.commands {
+        api::JobCommandsNotNone::Synthetic(commands) => {
+            match session.start_job(&id, commands.commands) {
+                Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
+                Err(e) => ApiResponse::fail(Status::BadRequest, e),
+            }
+        },
+        api::JobCommandsNotNone::Raw(commands) => {
+            match session.start_job_raw(&id, commands.commands) {
+                Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
+                Err(e) => ApiResponse::fail(Status::BadRequest, e),
+            }
+        },
     }
 }
 

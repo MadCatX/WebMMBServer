@@ -246,6 +246,15 @@ impl Session {
         }
     }
 
+    pub fn job_commands_mode(&self, id: Uuid) -> Option<api::JobCommandsMode> {
+        let data = self.data.read().unwrap();
+
+        match data.jobs.get(&id) {
+            Some(job) => Some(job.commands_mode()),
+            None => None,
+        }
+    }
+
     pub fn job_commands_raw(&self, id: Uuid) -> Result<Option<String>, String> {
         let data = self.data.read().unwrap();
 

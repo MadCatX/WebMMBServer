@@ -34,6 +34,28 @@ pub enum FileOperationRequestType {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
+pub enum JobCommandsMode {
+    None,
+    Synthetic,
+    Raw,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "mode")]
+pub enum JobCommands {
+    None(JobCommandsNone),
+    Synthetic(JobCommandsSynthetic),
+    Raw(JobCommandsRaw),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "mode")]
+pub enum JobCommandsNotNone {
+    Synthetic(JobCommandsSynthetic),
+    Raw(JobCommandsRaw),
+}
+
+#[derive(Deserialize, Serialize, Clone)]
 pub enum Orientation {
     Cis,
     Trans,
@@ -137,10 +159,9 @@ pub enum ConcreteCommands {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Commands {
-    pub first_stage: i32,
-    pub last_stage: i32,
     pub reporting_interval: f64,
     pub num_reporting_intervals: i32,
+    pub stage: i32,
     pub base_interaction_scale_factor: i32,
     pub temperature: f64,
 
@@ -159,14 +180,12 @@ pub struct ApiRequestData {
 #[serde(tag = "req_type")]
 pub enum ApiRequest {
     StartJob(ApiRequestData),
-    StartJobRaw(ApiRequestData),
     StopJob(ApiRequestData),
     CreateJob(ApiRequestData),
     DeleteJob(ApiRequestData),
     JobStatus(ApiRequestData),
     ListJobs(ApiRequestData),
     JobCommands(ApiRequestData),
-    JobCommandsRaw(ApiRequestData),
     SessionInfo(ApiRequestData),
     MmbOutput(ApiRequestData),
     CloneJob(ApiRequestData),
@@ -216,16 +235,19 @@ pub struct ResumeJobRqData {
     pub id: String,
     pub commands: Commands,
 }
+
 #[derive(Deserialize)]
 pub struct StartJobRqData {
     pub id: String,
-    pub commands: Commands,
+    pub commands: JobCommandsNotNone,
 }
+
 #[derive(Deserialize)]
 pub struct StartJobRawRqData {
     pub id: String,
     pub commands: String,
 }
+
 #[derive(Deserialize)]
 pub struct FileOperationRqData {
     pub req_type: FileOperationRequestType,
@@ -254,13 +276,6 @@ pub enum JobState {
     Running,
     Finished,
     Failed,
-}
-
-#[derive(Serialize)]
-pub enum JobCommandsMode {
-    None,
-    Synthetic,
-    Raw,
 }
 
 #[derive(Serialize)]
@@ -298,16 +313,18 @@ pub struct FileTransferAck {
     pub id: String,
 }
 
-#[derive(Serialize)]
-pub struct JobCommands {
-    pub is_empty: bool,
-    pub commands: Option<Commands>,
+#[derive(Deserialize, Serialize)]
+pub struct JobCommandsNone {
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
+pub struct JobCommandsSynthetic {
+    pub commands: Commands,
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct JobCommandsRaw {
-    pub is_empty: bool,
-    pub commands: Option<String>,
+    pub commands: String,
 }
 
 #[derive(Serialize)]
@@ -321,8 +338,8 @@ pub struct JobInfo {
     pub name: String,
     pub created_on: String,
     pub commands_mode: JobCommandsMode,
-    pub available_stages: Vec<i32>,
-    pub current_stage: Option<i32>,
+    pub first_stage: i32,
+    pub last_stage: i32,
     pub state: JobState,
     pub progress: Option<JobProgress>,
 }
