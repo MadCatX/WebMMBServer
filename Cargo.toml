@@ -9,11 +9,12 @@ edition = "2018"
 [dependencies]
 base64 = "^0.13.0"
 file-lock = "^1.1.20"
+journald = "^0.7.0"
 nix = "^0.19.0"
-rocket = "^0.4.10"
+rocket = { version = "^0.5.0-rc.1", features = ["secrets"] }
 regex = "1"
 serde = "^1.0.125"
 serde_derive = "^1.0.125"
 serde_json = "^1.0.64"
-time = "0.1.44"
-uuid = { version = "0.8", features = [ "serde", "v4" ] }
+time = { version = "0.2.27", features = ["std"] }
+uuid = { version = "0.8", features = ["serde", "v4"] }

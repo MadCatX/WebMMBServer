@@ -2,6 +2,10 @@ use std::io::prelude::*;
 use serde_derive::Deserialize;
 use serde_json;
 
+use crate::logging;
+
+const LOGSRC: &'static str= "config";
+
 static mut CONFIG: ConfigContainer = ConfigContainer{
     config: Config{
         mmb_exec_path: String::new(),
@@ -20,14 +24,16 @@ static mut CONFIG: ConfigContainer = ConfigContainer{
 fn check_dir_exists(path: &str) {
     let p = std::path::Path::new(path);
     if !std::path::Path::is_dir(p) {
-        panic!("Invalid configuration, {} does not exist or it is not a directory", path);
+        logging::log(logging::Priority::Critical, LOGSRC, &format!("Invalid configuration, {} does not exist or it is not a directory", path));
+        panic!();
     }
 }
 
 fn check_file_exists(path: &str) {
     let p = std::path::Path::new(path);
     if !std::path::Path::is_file(p) {
-        panic!("Invalid configuration, {} does not exist or it is not a file", path);
+        logging::log(logging::Priority::Critical, LOGSRC, &format!("Invalid configuration, {} does not exist or it is not a file", path));
+        panic!();
     }
 }
 
@@ -68,7 +74,10 @@ impl ConfigContainer {
     fn load(cfg_path: &str) {
         let cfg: Config = match serde_json::from_str(read_config(cfg_path).as_str()) {
             Ok(cfg) => cfg,
-            Err(e) => panic!("Failed to parse configuation file: {}", e.to_string()),
+            Err(e) => {
+                logging::log(logging::Priority::Critical, LOGSRC, &format!("Failed to parse configuation file: {}", e.to_string().as_str()));
+                panic!();
+            }
         };
 
         check_file_exists(cfg.mmb_exec_path.as_str());
@@ -76,10 +85,12 @@ impl ConfigContainer {
         check_dir_exists(cfg.examples_dir.as_str());
         check_dir_exists(cfg.root_dir.as_str());
         if cfg.domain.len() < 1 {
-            panic!("No domain");
+            logging::log(logging::Priority::Critical, LOGSRC, "Invalid configuration - no domain name: {}");
+            panic!();
         }
         if cfg.port == 0 {
-            panic!("Invalid port number");
+            logging::log(logging::Priority::Critical, LOGSRC, "Invalid configuration - port number cannot be zero");
+            panic!();
         }
 
         unsafe {

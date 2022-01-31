@@ -1,14 +1,13 @@
 extern crate time;
 
-use std::ops::Add;
-use rocket::http::{Cookie, Cookies, SameSite};
+use rocket::http::{Cookie, CookieJar, SameSite};
 use uuid::Uuid;
 
 pub const AUTH_NAME: &'static str = "webmmb_auth";
 
 pub fn make_auth_cookie(domain: String, session_id: String, require_https: bool) -> Cookie<'static> {
-    let now = time::now();
-    let expire_on = now.add(time::Duration::days(1));
+    let now = time::OffsetDateTime::now_utc();
+    let expire_on = now + time::Duration::days(1);
 
     Cookie::build(AUTH_NAME, session_id)
         .domain(domain)
@@ -19,8 +18,8 @@ pub fn make_auth_cookie(domain: String, session_id: String, require_https: bool)
         .finish()
 }
 
-pub fn get_session_id(cookies: &mut Cookies) -> Option<Uuid> {
-    match cookies.get_private(AUTH_NAME) {
+pub fn get_session_id(jar: &CookieJar<'_>) -> Option<Uuid> {
+    match jar.get_private(AUTH_NAME) {
         Some(c) => {
             match Uuid::parse_str(c.value()) {
                 Ok(id) => Some(id),
@@ -31,6 +30,6 @@ pub fn get_session_id(cookies: &mut Cookies) -> Option<Uuid> {
     }
 }
 
-pub fn remove_session_cookie(cookies: &mut Cookies) {
-    cookies.remove_private(Cookie::named(AUTH_NAME));
+pub fn remove_session_cookie(jar: &CookieJar<'_>) {
+    jar.remove_private(Cookie::named(AUTH_NAME));
 }

@@ -1,103 +1,89 @@
-use std::io::{self, Read};
-use rocket::{Data, Outcome::*};
-use rocket::data::{FromData, Outcome, Transform, Transformed};
+use rocket::Data;
+use rocket::data::{FromData, Outcome, ToByteUnit};
 use rocket::http::Status;
 use rocket::request::Request;
-use serde_json::Result;
 
-use crate::server::api;
+use crate::server::{api, LOGSRC};
+use crate::logging;
 
-const MAX_JSON_SIZE: u64 = 4 * 1024 * 1024;
-const MAX_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
+const MAX_JSON_SIZE: usize = 4 * 1024 * 1024;
+const MAX_CHUNK_SIZE: usize = 8 * 1024 * 1024;
 
-pub enum JsonParseError {
-    Io(io::Error),
-    Parse
-}
-
-fn transform_json(data: Data) -> Transform<Outcome<String, JsonParseError>> {
-    let mut stream = data.open().take(MAX_JSON_SIZE);
-        let mut string = String::with_capacity((MAX_JSON_SIZE / 8) as usize);
-        let outcome = match stream.read_to_string(&mut string) {
-            Ok(_) => Success(string),
-            Err(e) => Failure((Status::InternalServerError, JsonParseError::Io(e)))
-        };
-
-        Transform::Borrowed(outcome)
-}
-
+#[rocket::async_trait]
 impl<'a> FromData<'a> for api::ApiRequest {
-    type Error = JsonParseError;
-    type Owned = String;
-    type Borrowed = str;
+    type Error = String;
 
-    fn transform(_: &Request, data: Data) -> Transform<Outcome<Self::Owned, Self::Error>> {
-        transform_json(data)
-    }
-
-    fn from_data(_: &Request, outcome: Transformed<'a, Self>) -> Outcome<Self, Self::Error> {
-        let s = outcome.borrowed()?;
-
-        println!("{}", s);
-
-        let parsed: Result<api::ApiRequest> = serde_json::from_str(s);
-        match parsed {
-            Ok(parsed) => Success(parsed),
+    async fn from_data(_: &'a Request<'_>, data: Data<'a>) -> Outcome<'a, Self> {
+        let stream = data.open(ToByteUnit::bytes(MAX_JSON_SIZE));
+        match stream.into_string().await {
+            Ok(payload) => {
+                match serde_json::from_str::<api::ApiRequest>(&payload) {
+                    Ok(auth) => Outcome::Success(auth),
+                    Err(e) => {
+                        logging::log(logging::Priority::Warning, LOGSRC, &format!("Malformed api request: {}", e.to_string()));
+                        Outcome::Failure((Status::BadRequest, String::from("Malformed request")))
+                    }
+                }
+            },
             Err(e) => {
-                println!("Bad ApiRequest{}", e.to_string());
-                Failure((Status::BadRequest, JsonParseError::Parse))
-            }
+                // @nocheckin: Use common server log name
+                logging::log(logging::Priority::Warning, "server", &format!("Cannot get api request message body: {}", e.to_string()));
+                Outcome::Failure((Status::InternalServerError, String::from("Cannot process api request")))
+            },
         }
     }
 }
 
+#[rocket::async_trait]
 impl<'a> FromData<'a> for api::AuthRequest {
-    type Error = JsonParseError;
-    type Owned = String;
-    type Borrowed = str;
+    type Error = String;
 
-    fn transform(_: &Request, data: Data) -> Transform<Outcome<Self::Owned, Self::Error>> {
-        transform_json(data)
-    }
-
-    fn from_data(_: &Request, outcome: Transformed<'a, Self>) -> Outcome<Self, Self::Error> {
-        let s = outcome.borrowed()?;
-
-        println!("{}", s);
-
-        let parsed: Result<api::AuthRequest> = serde_json::from_str(s);
-        match parsed {
-            Ok(parsed) => Success(parsed),
+    async fn from_data(_: &'a Request<'_>, data: Data<'a>) -> Outcome<'a, Self> {
+        let stream = data.open(ToByteUnit::bytes(MAX_JSON_SIZE));
+        match stream.into_string().await {
+            Ok(payload) => {
+                match serde_json::from_str::<api::AuthRequest>(&payload) {
+                    Ok(auth) => Outcome::Success(auth),
+                    Err(e) => {
+                        logging::log(logging::Priority::Warning, LOGSRC, &format!("Malformed authentication request: {}", e.to_string()));
+                        Outcome::Failure((Status::BadRequest, String::from("Malformed request")))
+                    }
+                }
+            },
             Err(e) => {
-                println!("Bad AuthRequest{}", e.to_string());
-                Failure((Status::BadRequest, JsonParseError::Parse))
-            }
+                // @nocheckin: Use common server log name
+                logging::log(logging::Priority::Warning, "server", &format!("Cannot get authentication request message body: {}", e.to_string()));
+                Outcome::Failure((Status::InternalServerError, String::from("Cannot process authentication request")))
+            },
         }
     }
 }
 
+#[rocket::async_trait]
 impl<'a> FromData<'a> for api::FileTransferChunk {
     type Error = String;
-    type Owned = Vec<u8>;
-    type Borrowed = Vec<u8>;
 
-    fn transform(_request: &Request, data: Data) -> Transform<Outcome<Self::Owned, Self::Error>> {
-        let mut stream = data.open().take(MAX_CHUNK_SIZE);
-        let mut buf = Vec::<u8>::with_capacity(MAX_CHUNK_SIZE as usize);
-        let outcome = match stream.read_to_end(&mut buf) {
-            Ok(_) => Success(buf),
-            Err(e) => Failure((Status::InternalServerError, format!("Cannot read request data: {}", e.to_string()))),
-        };
-
-        Transform::Borrowed(outcome)
-    }
-
-    fn from_data(_: &Request, outcome: Transformed<'a, Self>) -> Outcome<Self, Self::Error> {
-        let buf = outcome.borrowed()?;
-
-        match api::FileTransferChunk::from_bytes(&buf) {
-            Ok(chunk) => Success(chunk),
-            Err(e) => Failure((Status::BadRequest, e)),
+    async fn from_data(_: &'a Request<'_>, data: Data<'a>) -> Outcome<'a, Self> {
+        let stream = data.open(ToByteUnit::bytes(MAX_CHUNK_SIZE));
+        match stream.into_bytes().await {
+            Ok(payload) => {
+                if !payload.is_complete() {
+                    logging::log(logging::Priority::Warning, LOGSRC, &format!("FileTransferChunk payload was capped prematurely at {} bytes", payload.n));
+                    return Outcome::Failure((Status::BadRequest, String::from("Too long request")));
+                } else {
+                    match api::FileTransferChunk::from_bytes(&payload.value) {
+                        Ok(chunk) => Outcome::Success(chunk),
+                        Err(e) => {
+                            logging::log(logging::Priority::Warning, LOGSRC, &format!("Malformed payload for FileTransferChunk: {}", e.to_string()));
+                            Outcome::Failure((Status::BadRequest, String::from("Malformed file transfer chunk request")))
+                        },
+                    }
+                }
+            },
+            Err(e) => {
+                logging::log(logging::Priority::Warning, LOGSRC, &format!("Cannot get file transfer chunk request body: {}", e.to_string()));
+                Outcome::Failure((Status::InternalServerError, String::from("Cannot process file transfer request")))
+            },
         }
     }
 }

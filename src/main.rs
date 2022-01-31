@@ -1,8 +1,9 @@
 #![feature(proc_macro_hygiene, decl_macro)]
-extern crate rocket;
+#[macro_use] extern crate rocket;
 extern crate uuid;
 
 mod config;
+mod logging;
 mod mmb;
 mod pbs;
 mod server;
@@ -13,13 +14,21 @@ fn init() {
     if !std::path::Path::is_dir(p) {
         let mut db = std::fs::DirBuilder::new();
         db.recursive(true);
-        db.create(p).expect("Failed to create jobs directory");
+        match db.create(p) {
+            Ok(()) => (),
+            Err(e) => {
+                logging::log(logging::Priority::Critical, "core", &format!("Failed to create working directory: {}", e.to_string()));
+                panic!();
+            },
+        }
     }
 }
 
-fn main() {
+#[rocket::launch]
+fn liftoff() -> _ {
+    logging::log_startup_message();
     config::load("./cfg.json");
     init();
 
-    server::start();
+    server::start()
 }

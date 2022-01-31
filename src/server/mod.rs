@@ -7,6 +7,10 @@ mod server;
 mod session_cookie;
 mod transfer_handlers;
 
-pub fn start() {
-    server::start();
+use rocket;
+
+pub const LOGSRC: &'static str = "server";
+
+pub fn start() -> rocket::Rocket<rocket::Build> {
+    server::start()
 }
