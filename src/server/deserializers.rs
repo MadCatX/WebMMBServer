@@ -26,8 +26,7 @@ impl<'a> FromData<'a> for api::ApiRequest {
                 }
             },
             Err(e) => {
-                // @nocheckin: Use common server log name
-                logging::log(logging::Priority::Warning, "server", &format!("Cannot get api request message body: {}", e.to_string()));
+                logging::log(logging::Priority::Warning, LOGSRC, &format!("Cannot get api request message body: {}", e.to_string()));
                 Outcome::Failure((Status::InternalServerError, String::from("Cannot process api request")))
             },
         }
@@ -51,8 +50,7 @@ impl<'a> FromData<'a> for api::AuthRequest {
                 }
             },
             Err(e) => {
-                // @nocheckin: Use common server log name
-                logging::log(logging::Priority::Warning, "server", &format!("Cannot get authentication request message body: {}", e.to_string()));
+                logging::log(logging::Priority::Warning, LOGSRC, &format!("Cannot get authentication request message body: {}", e.to_string()));
                 Outcome::Failure((Status::InternalServerError, String::from("Cannot process authentication request")))
             },
         }

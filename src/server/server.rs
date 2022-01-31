@@ -34,6 +34,7 @@ fn check_str_is_uuid(s: String) -> Option<Uuid> {
 impl<'a> rocket::request::FromRequest<'a> for SessionId {
     type Error = String;
 
+    // REVIEW: Look into these Forwardings
     async fn from_request(request: &'a rocket::request::Request<'_>) -> rocket::request::Outcome<Self, Self::Error> {
         match request.guard::<&rocket::State<AppState>>().await {
             rocket::request::Outcome::Success(state) => {
@@ -161,7 +162,7 @@ fn index(jar: &rocket::http::CookieJar<'_>, state: &rocket::State<AppState>) -> 
 #[get("/")]
 async fn index_authorized(_sid: SessionId, jar: &rocket::http::CookieJar<'_>, state: &rocket::State<AppState>) -> Result<rocket::fs::NamedFile, WMSError> {
     match get_session_authorized(jar, &state) {
-        Some(s) => {
+        Some(_) => {
             match rocket::fs::NamedFile::open("assets/index.html").await {
                 Ok(f) => Ok(f),
                 Err(_) => Err(WMSError{ status: rocket::http::Status::NotFound })
@@ -191,10 +192,9 @@ async fn additional_file(session_id: String, job_id: String, file_name: String, 
         Some(s) => s,
         None => return Err(WMSError{ status: rocket::http::Status::Forbidden }),
     };
-    let sid = match session::str_to_uuid(session_id.as_str()) {
-        Ok(sid) => sid,
-        Err(_) => return Err(WMSError{ status: rocket::http::Status::NotFound }),
-    };
+    if session::str_to_uuid(session_id.as_str()).is_err() {
+        return Err(WMSError{ status: rocket::http::Status::NotFound });
+    }
     let jid = match session::str_to_uuid(job_id.as_str()) {
         Ok(jid) => jid,
         Err(_) => return Err(WMSError{ status: rocket::http::Status::NotFound }),
@@ -239,10 +239,9 @@ fn density(session_id: String, job_id: String, jar: &rocket::http::CookieJar<'_>
         Some(s) => s,
         None => return Err(WMSError{ status: rocket::http::Status::Forbidden }),
     };
-    let sid = match session::str_to_uuid(session_id.as_str()) {
-        Ok(sid) => sid,
-        Err(_) => return Err(WMSError{ status: rocket::http::Status::NotFound }),
-    };
+    if session::str_to_uuid(session_id.as_str()).is_err() {
+        return Err(WMSError{ status: rocket::http::Status::NotFound });
+    }
     let jid = match session::str_to_uuid(job_id.as_str()) {
         Ok(jid) => jid,
         Err(_) => return Err(WMSError{ status: rocket::http::Status::NotFound }),
@@ -314,8 +313,11 @@ pub fn start() -> rocket::Rocket<rocket::Build> {
 
     let mut srv_cfg = rocket::config::Config::default();
     srv_cfg.port = cfg.port;
-    srv_cfg.log_level = rocket::config::LogLevel::Normal;
     srv_cfg.cli_colors = false;
+    srv_cfg.log_level = match cfg.verbose_rocket_logging {
+        true => rocket::config::LogLevel::Normal,
+        false => rocket::config::LogLevel::Critical,
+    };
 
     rocket::custom(srv_cfg)
         .mount("/",
