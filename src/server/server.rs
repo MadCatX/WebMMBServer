@@ -33,26 +33,23 @@ fn check_str_is_uuid(s: String) -> Option<Uuid> {
     }
 }
 
+macro_rules! apirequest_text {
+    ($var:ident, $($item:ident),*) => {
+        match $var {
+            $(srvapi::ApiRequest::$item(_) => stringify!($item),)*
+        }
+    };
+}
 
 impl fmt::Display for srvapi::ApiRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: Can we simplify that match with a macro???
-        let s = match self {
-            srvapi::ApiRequest::StopJob(_) => "StopJob",
-            srvapi::ApiRequest::StartJob(_) => "StartJob",
-            srvapi::ApiRequest::CreateJob(_) => "CreateJob",
-            srvapi::ApiRequest::DeleteJob(_) => "DeleteJob",
-            srvapi::ApiRequest::JobStatus(_) => "JobStatus",
-            srvapi::ApiRequest::ListJobs(_) => "ListJobs",
-            srvapi::ApiRequest::JobCommands(_) => "JobCommands",
-            srvapi::ApiRequest::SessionInfo(_) => "SessionInfo",
-            srvapi::ApiRequest::MmbOutput(_) => "MmbOutput",
-            srvapi::ApiRequest::CloneJob(_) => "CloneJob",
-            srvapi::ApiRequest::ListExamples(_) => "ListExamples",
-            srvapi::ApiRequest::ActivateExample(_) => "ActivateExample",
-            srvapi::ApiRequest::FileOperation(_) => "FileOperation",
-            srvapi::ApiRequest::ListAdditionalFiles(_) => "ListAdditionalFiles",
-        };
+        let s = apirequest_text!(
+            self,
+            StopJob, StartJob, CreateJob, DeleteJob,
+            JobStatus, ListJobs, JobCommands, SessionInfo,
+            MmbOutput, CloneJob, ListExamples, ActivateExample,
+            FileOperation, ListAdditionalFiles
+        );
 
         write!(f, "{}", s)
     }
