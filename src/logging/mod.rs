@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::net::IpAddr;
 use journald::*;
 
 pub const INV_FILE_NAME: &'static str = "<INVALID_FILE_NAME>";
@@ -23,6 +24,13 @@ impl fmt::Display for Priority {
     }
 }
 
+fn addr_to_str(addr: &Option<IpAddr>) -> String {
+    match addr {
+        Some(addr) => addr.to_string(),
+        None => String::from("NO_ADDRESS"),
+    }
+}
+
 fn make_log_entry(pri: Priority, source: &str, message: &str) -> JournalEntry {
     let mut fields = BTreeMap::new();
 
@@ -33,6 +41,11 @@ fn make_log_entry(pri: Priority, source: &str, message: &str) -> JournalEntry {
     entry.set_message(message);
 
     entry
+}
+
+pub fn incoming(pri: Priority, source: &str, remote: Option<IpAddr>, message: &str) {
+    let actual_msg = format!("-> [{}] {}", addr_to_str(&remote), message);
+    log(pri, source, &actual_msg);
 }
 
 pub fn log(pri: Priority, source: &str, message: &str) {

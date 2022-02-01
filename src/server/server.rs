@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use std::fmt;
 use rocket;
 use uuid::Uuid;
 
@@ -11,6 +12,8 @@ use crate::server::{request_handlers, session_cookie, transfer_handlers, LOGSRC}
 use crate::server::responders::{DensityFile, PdbFile, WMSError};
 use crate::session::session::Session;
 use crate::session::session_manager::SessionManager;
+
+use super::incoming::{IncomingAuthRequest, IncomingApiRequest};
 
 struct AppState {
     pub sm: RwLock<SessionManager>,
@@ -27,6 +30,31 @@ fn check_str_is_uuid(s: String) -> Option<Uuid> {
     match session::str_to_uuid(s.as_str()) {
         Ok(uuid) => Some(uuid),
         Err(_) => None,
+    }
+}
+
+
+impl fmt::Display for srvapi::ApiRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // TODO: Can we simplify that match with a macro???
+        let s = match self {
+            srvapi::ApiRequest::StopJob(_) => "StopJob",
+            srvapi::ApiRequest::StartJob(_) => "StartJob",
+            srvapi::ApiRequest::CreateJob(_) => "CreateJob",
+            srvapi::ApiRequest::DeleteJob(_) => "DeleteJob",
+            srvapi::ApiRequest::JobStatus(_) => "JobStatus",
+            srvapi::ApiRequest::ListJobs(_) => "ListJobs",
+            srvapi::ApiRequest::JobCommands(_) => "JobCommands",
+            srvapi::ApiRequest::SessionInfo(_) => "SessionInfo",
+            srvapi::ApiRequest::MmbOutput(_) => "MmbOutput",
+            srvapi::ApiRequest::CloneJob(_) => "CloneJob",
+            srvapi::ApiRequest::ListExamples(_) => "ListExamples",
+            srvapi::ApiRequest::ActivateExample(_) => "ActivateExample",
+            srvapi::ApiRequest::FileOperation(_) => "FileOperation",
+            srvapi::ApiRequest::ListAdditionalFiles(_) => "ListAdditionalFiles",
+        };
+
+        write!(f, "{}", s)
     }
 }
 
@@ -106,16 +134,22 @@ async fn auth_page() -> Result<rocket::fs::NamedFile, WMSError> {
 }
 
 #[post("/auth", data = "<auth>")]
-fn auth_verify(auth: srvapi::AuthRequest, jar: &rocket::http::CookieJar<'_>, state: &rocket::State<AppState>) -> srvapi::AuthResponse {
-    match auth {
+fn auth_verify(auth: IncomingAuthRequest, jar: &rocket::http::CookieJar<'_>, state: &rocket::State<AppState>) -> srvapi::AuthResponse {
+    match auth.payload {
         srvapi::AuthRequest::LogIn(data) => {
             if data.session_id == "" {
                 let id = session::new_uuid();
                 let c = session_cookie::make_auth_cookie(state.domain.clone(), session::uuid_to_str(&id), state.require_https);
                 jar.add_private(c);
                 match state.sm.write().unwrap().create_session(&id) {
-                    Ok(_) => srvapi::AuthResponse{ status: rocket::http::Status::Ok, message: String::new() },
-                    Err(e) => srvapi::AuthResponse{ status: rocket::http::Status::InternalServerError, message: e.to_string() },
+                    Ok(_) => {
+                        logging::incoming(logging::Priority::Info, LOGSRC, auth.remote_addr, &format!("Opening session {}", id));
+                        srvapi::AuthResponse{ status: rocket::http::Status::Ok, message: String::new() }
+                    }
+                    Err(e) => {
+                        logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create session: {}", e));
+                        srvapi::AuthResponse{ status: rocket::http::Status::InternalServerError, message: String::from("Cannot create session") }
+                    }
                 }
             } else {
                 let id = match session::str_to_uuid(data.session_id.as_str().trim()) {
@@ -135,7 +169,10 @@ fn auth_verify(auth: srvapi::AuthRequest, jar: &rocket::http::CookieJar<'_>, sta
         },
         srvapi::AuthRequest::LogOut(_) => {
             match session_cookie::get_session_id(jar) {
-                Some(sid) => state.sm.write().unwrap().destroy_session(&sid),
+                Some(sid) => {
+                    logging::incoming(logging::Priority::Info, LOGSRC, auth.remote_addr, &format!("Closing session {}", sid));
+                    state.sm.write().unwrap().destroy_session(&sid)
+                }
                 None => (),
             };
             session_cookie::remove_session_cookie(jar);
@@ -208,14 +245,16 @@ async fn additional_file(session_id: String, job_id: String, file_name: String, 
     }
 }
 
-#[rocket::post("/api", format = "application/json", data = "<req>")]
-fn api(req: srvapi::ApiRequest, jar: &rocket::http::CookieJar<'_>, state: &rocket::State<AppState>) -> Result<srvapi::ApiResponse, WMSError> {
+#[rocket::post("/api", data = "<data>")]
+fn api(data: IncomingApiRequest, jar: &rocket::http::CookieJar<'_>, state: &rocket::State<AppState>) -> Result<srvapi::ApiResponse, WMSError> {
     let s = match get_session_authorized(jar, &state) {
         Some(s) => s,
         None => return Err(WMSError{ status: rocket::http::Status::Forbidden }),
     };
 
-    match req {
+    logging::incoming(logging::Priority::Info, LOGSRC, data.remote_addr, &format!("ApiRequest {}", data.payload));
+
+    match data.payload {
         srvapi::ApiRequest::StartJob(v) => Ok(request_handlers::start_job(s, v.data)),
         srvapi::ApiRequest::StopJob(v) => Ok(request_handlers::stop_job(s, v.data)),
         srvapi::ApiRequest::CreateJob(v) => Ok(request_handlers::create_job(s, v.data)),
