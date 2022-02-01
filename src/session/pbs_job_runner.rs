@@ -5,9 +5,12 @@ use std::process::Command;
 use std::path::{Path, PathBuf};
 
 use crate::config;
+use crate::logging;
 use crate::mmb;
 use crate::pbs;
 use super::job_runner;
+
+const LOGSRC: &'static str = "pbs_job_runner";
 
 fn mk_stderr_file_path(mut base_path: PathBuf) -> PathBuf {
     base_path.push("job_stderr.txt");
@@ -38,8 +41,16 @@ impl job_runner::JobRunner for PbsJobRunner {
     }
 
     fn prune_job_dir(&self, job_dir: PathBuf) -> Result<(), String> {
-        std::fs::remove_file(mk_stderr_file_path(job_dir.clone()));
-        std::fs::remove_file(mk_stdout_file_path(job_dir.clone()));
+        let stderr_file_path = mk_stderr_file_path(job_dir.clone());
+        if let Err(e) = std::fs::remove_file(&stderr_file_path) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete strerr output file {}: {}", stderr_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+        }
+
+        let stdout_file_path = mk_stdout_file_path(job_dir.clone());
+        if let Err(e) = std::fs::remove_file(&stdout_file_path) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete stdout output file {}: {}", stdout_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+        }
+
         Ok(())
     }
 
@@ -149,8 +160,9 @@ impl PbsJobRunner {
             diag_file_path.display(),
             progress_file_path.display()
         );
-        fh.write_all(script.as_bytes());
-
-        Ok(starter_path)
+        match fh.write_all(script.as_bytes()) {
+            Ok(_) => Ok(starter_path),
+            Err(e) => Err(e.to_string()),
+        }
     }
 }

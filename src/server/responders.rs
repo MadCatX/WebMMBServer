@@ -103,7 +103,7 @@ impl<'a, 'b: 'a> Responder<'a, 'b> for PdbFile {
 
         let mut payload = Vec::<u8>::new();
         if let Err(e) = fh.read_to_end(&mut payload) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot read PdbFile {}: {}", self.path.as_os_str().to_str().unwrap_or("<INVALID_FILE_NAME>"), e.to_string()));
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot read PdbFile {}: {}", self.path.as_os_str().to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
             return Err(Status::InternalServerError);
         }
 

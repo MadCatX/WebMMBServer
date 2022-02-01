@@ -5,13 +5,17 @@ use std::time::{Duration, SystemTime};
 use file_lock::FileLock;
 use uuid::Uuid;
 
-use crate::server::api;
 use crate::config;
+use crate::logging;
 use crate::mmb;
+use crate::server::api;
 
 use super::job_runner::JobRunner;
 use super::local_job_runner::LocalJobRunner;
 use super::pbs_job_runner::PbsJobRunner;
+use super::JobError;
+
+const LOGSRC: &'static str = "job";
 
 #[derive(Clone)]
 struct AdditionalFileInternal {
@@ -74,6 +78,8 @@ fn clear_stages(path: &PathBuf, stage: i32) -> Result<(), String> {
         Err(e) => return Err(e.to_string()),
     };
 
+    let mut some_failed_to_delete = false;
+
     let traj_prefix = format!("{}.", mmb::TRAJECTORY_FILE_PREFIX);
     let last_prefix = format!("{}.", mmb::LAST_FRAME_FILE_PREFIX);
     for entry in dir_lister {
@@ -120,11 +126,17 @@ fn clear_stages(path: &PathBuf, stage: i32) -> Result<(), String> {
         };
 
         if n >= stage {
-            std::fs::remove_file(p);
+            if let Err(e) = std::fs::remove_file(&p) {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete file {}: {}", p.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+                some_failed_to_delete = true;
+            }
         }
     }
 
-    Ok(())
+    match some_failed_to_delete {
+        false => Ok(()),
+        true => Err(String::from("Some stage files could not have been deleted")),
+    }
 }
 
 fn copy_job_dir(tgt: &PathBuf, src: &PathBuf) -> Result<(), String> {
@@ -282,10 +294,11 @@ fn read_mmb_progress(path: &Path) -> Result<Option<Progress>, String> {
         None => return Err(String::from("Cannot convert progress file path to str")),
     };
 
-    let mut locked = match FileLock::lock(path_str, false, false) {
+    let mut locked = match FileLock::lock(&path_str, false, false) {
         Ok(locked) => locked,
         Err(e) => {
             /* Error here may indicate that the progress file is locked by MMB */
+            logging::log(logging::Priority::Debug, LOGSRC, &format!("Cannot lock progress file {}: {}", path_str, e.to_string()));
             return Ok(None);
         },
     };
@@ -335,18 +348,21 @@ impl Job {
         }
     }
 
-    pub fn check_retire(&mut self) {
-        self.runner.executor_state();
+    pub fn check_retire(&mut self) -> Result<mmb::State, String> {
+        self.runner.executor_state()
     }
 
-    pub fn clone(name: String, job_dir: PathBuf, src: &Job) -> Result<Job, String> {
+    pub fn clone(name: String, job_dir: PathBuf, src: &Job) -> Result<Job, JobError> {
         if !src.file_transfers.is_empty() {
-            return Err(String::from("Jobs with active file transfers cannot be cloned"));
+            return Err(JobError::BadInput(String::from("Jobs with active file transfers cannot be cloned")));
         }
 
         match copy_job_dir(&job_dir, &src.job_dir) {
             Ok(_) => (),
-            Err(e) => return Err(e),
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to copy job directory for cloned job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                return Err(JobError::InternalError);
+            },
         };
 
         let cmds_file_path = mk_cmds_file_path(job_dir.clone());
@@ -355,7 +371,10 @@ impl Job {
 
         let runner = match mk_runner() {
             Ok(runner) => runner,
-            Err(e) => return Err(e),
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create runner for cloned job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                return Err(JobError::InternalError);
+            }
         };
 
         Ok(Job{
@@ -395,7 +414,7 @@ impl Job {
         self.raw_commands.clone()
     }
 
-    pub fn create(name: String, job_dir: PathBuf, commands: Option<api::Commands>, raw_commands: Option<String>) -> Result<Job, String> {
+    pub fn create(name: String, job_dir: PathBuf, commands: Option<api::Commands>, raw_commands: Option<String>) -> Result<Job, JobError> {
         assert!(!(commands.is_some() && raw_commands.is_some()), "Synthetic and raw commands cannot be both specified at the same time");
 
         let cmds_file_path = mk_cmds_file_path(job_dir.clone());
@@ -404,7 +423,10 @@ impl Job {
 
         let runner = match mk_runner() {
             Ok(runner) => runner,
-            Err(e) => return Err(e),
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create runner for new job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                return Err(JobError::InternalError);
+            },
         };
 
         Ok(Job{
@@ -596,64 +618,75 @@ impl Job {
         self.additional_files.iter().map(|(k, v)| { AdditionalFile{name: k.clone(), size: v.size} }).collect()
     }
 
-    pub fn start(&mut self, commands: api::Commands) -> Result<(), String> {
-        match self.info() {
-            Ok(info) => {
-                if info.state == mmb::State::Running {
-                    return Err(String::from("Job is already running"))
-                }
-            },
-            Err(_) => (),
+    pub fn start(&mut self, commands: api::Commands) -> Result<(), JobError> {
+        if let Ok(info) = self.info() {
+            if info.state == mmb::State::Running {
+                return Err(JobError::BadInput(String::from("Job is already running")));
+            }
         }
 
         if self.raw_commands.is_some() {
-            return Err(String::from("Job created in raw commands mode cannot be run in synthetic commands mode"));
+            return Err(JobError::BadInput(String::from("Job created in raw commands mode cannot be run in synthetic commands mode")));
         }
 
         self.commands = Some(commands);
-        self.prune_job_dir(self.commands.as_ref().unwrap().stage)?;
-        match mmb::commands::write(&self.cmds_file_path, self.commands.as_ref().unwrap()) {
-            Ok(_) => (),
-            Err(e) => return Err(e.to_string()),
-        };
 
-        self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
+        if let Err(_) = self.prune_job_dir(self.commands.as_ref().unwrap().stage) {
+            return Err(JobError::InternalError);
+        }
+        if let Err(e) = mmb::commands::write(&self.cmds_file_path, self.commands.as_ref().unwrap()) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to write job commands file {}: {}", &self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+            return Err(JobError::InternalError);
+        }
+
+        match self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path()) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("JobRunner failed to start job {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                Err(JobError::InternalError)
+            }
+        }
     }
 
-    pub fn start_raw(&mut self, raw_commands: String) -> Result<(), String> {
-        match self.info() {
-            Ok(info) => {
-                if info.state == mmb::State::Running {
-                    return Err(String::from("Job is already running"))
-                }
-            },
-            Err(_) => (),
+    pub fn start_raw(&mut self, raw_commands: String) -> Result<(), JobError> {
+        if let Ok(info) = self.info() {
+            if info.state == mmb::State::Running {
+                return Err(JobError::BadInput(String::from("Job is already running")));
+            }
         }
 
         if self.commands.is_some() {
-            return Err(String::from("Job created in synthetic commands mode cannot be run in raw commands mode"));
+            return Err(JobError::BadInput(String::from("Job created in synthetic commands mode cannot be run in raw commands mode")));
         }
 
         let parsed = match mmb::commands::parse_raw(&raw_commands) {
             Ok(v) => v,
-            Err(e) => return Err(e),
+            Err(e) => return Err(JobError::BadInput(String::from("Raw commands are invalid"))),
         };
 
-        self.prune_job_dir(parsed.first_stage)?;
-        match mmb::commands::write_raw(&self.cmds_file_path, &raw_commands) {
-            Ok(_) => (),
-            Err(e) => return Err(e.to_string()),
+        if let Err(_) = self.prune_job_dir(parsed.first_stage) {
+            return Err(JobError::InternalError);
+        }
+        if let Err(e) = mmb::commands::write_raw(&self.cmds_file_path, &raw_commands) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to write raw job commands file {}: {}", &self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            return Err(JobError::InternalError);
         }
         self.raw_commands = Some(raw_commands);
 
-        self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path())
+        match self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path()) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("JobRunner failed to start raw job {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                Err(JobError::InternalError)
+            },
+        }
     }
 
     pub fn stop(&mut self) -> Result<(), String> {
         self.runner.stop()
     }
 
-    pub fn terminate_hung_uploads(&mut self) {
+    pub fn terminate_hung_uploads(&mut self) -> Result<(), ()> {
         let mut to_terminate = Vec::<Uuid>::new();
 
         for (k, xfr) in self.file_transfers.iter() {
@@ -663,13 +696,18 @@ impl Job {
                         to_terminate.push(*k);
                     }
                 },
-                Err(e) => panic!("{}", e.to_string().as_str()),
+                Err(e) => {
+                    logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to get system time: {}", e.to_string()));
+                    return Err(());
+                },
             }
         }
 
         for item in to_terminate.iter() {
             self.terminate_transfer(item);
         }
+
+        Ok(())
     }
 
     pub fn upload_chunk(&mut self, transfer_id: &Uuid, index: u32, chunk: Vec<u8>) -> Result<(), String> {
@@ -697,15 +735,42 @@ impl Job {
         let mut path = self.job_dir.clone();
         path.push(file_path);
 
-        std::fs::remove_file(path);
+        if let Err(e) = std::fs::remove_file(&path) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete file {}: {}", path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+        }
     }
 
-    fn prune_job_dir(&self, first_stage: i32) -> Result<(), String> {
-        remove_file(self.cmds_file_path.as_path());
-        remove_file(self.diag_file_path.as_path());
-        remove_file(self.progress_file_path.as_path());
-        clear_stages(&self.job_dir, first_stage)?;
-        self.runner.prune_job_dir(self.job_dir.clone())
+    fn prune_job_dir(&self, first_stage: i32) -> Result<(), ()> {
+        let mut failed = false;
+
+        if let Err(e) = remove_file(self.cmds_file_path.as_path()) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to delete commands file {}: {}", self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            failed = true;
+        }
+
+        if let Err(e) = remove_file(self.diag_file_path.as_path()) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to delete diagnostics file {}: {}", self.diag_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            failed = true;
+        }
+
+        if let Err(e) = remove_file(self.progress_file_path.as_path()) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to delete progress file {}: {}", self.progress_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            failed = true;
+        }
+
+        if let Err(_) = clear_stages(&self.job_dir, first_stage) {
+            failed = true;
+        }
+
+        if let Err(e) = self.runner.prune_job_dir(self.job_dir.clone()) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot prune JobRunner-specific files: {}", e));
+            failed = true;
+        }
+
+        match failed {
+            true => Err(()),
+            false => Ok(()),
+        }
     }
 
     fn terminate_transfer(&mut self, id: &Uuid) {
@@ -713,9 +778,11 @@ impl Job {
 
         let mut path = self.job_dir.clone();
         path.push(&file_name);
-        std::fs::remove_file(path);
+        if let Err(e) = std::fs::remove_file(&path) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete partially transferred file of hung transfer {}: {}", path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+        }
 
-        println!("Terminating hung transfer of file \"{}\"", file_name);
+        logging::log(logging::Priority::Info, LOGSRC, "Terminating hung file transfer");
     }
 }
 
@@ -726,7 +793,9 @@ impl Drop for Job {
             self.terminate_transfer(&id);
         }
 
-        std::fs::remove_dir_all(&self.job_dir);
+        if let Err(e) = std::fs::remove_dir_all(&self.job_dir) {
+            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete job directory {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+        }
         println!("Job dropped");
     }
 }

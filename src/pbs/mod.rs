@@ -42,7 +42,7 @@ fn get_pbs_state_json() -> Result<JsonObject, String> {
                     Ok(obj) => Ok(obj),
                     Err(e) => Err(e.to_string()),
                 },
-                Err(e) => return Err(String::from("qstat output is not a valid string")),
+                Err(_) => return Err(String::from("qstat output is not a valid string")),
             }
         },
         Err(e) => Err(e.to_string()),
@@ -127,11 +127,11 @@ fn parse_job_info(job_no: u32, server_name: &String, pbs_state: &JsonObject) -> 
             Ok(s) => {
                 let parts: Vec<&str> = s.split('/').collect();
                 if parts.len() != 2 {
-                    return Err(String::from("Invalid exec_node ID"));
+                    return Err(format!("String {} does not represent a valid exec_node ID", s));
                 }
                 String::from(parts[0])
             }
-            Err(e) => return Err(String::from("Invalid exec_node ID")),
+            Err(e) => return Err(format!("Cannot parse exec_node value: {}", e)),
         },
         None => return Err(String::from("exec_host field not found")),
     };

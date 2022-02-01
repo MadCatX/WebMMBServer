@@ -180,7 +180,7 @@ async fn static_files(file: PathBuf) -> Result<rocket::fs::NamedFile, WMSError> 
     match rocket::fs::NamedFile::open(Path::new("assets/").join(&file)).await {
         Ok(file) => Ok(file),
         Err(_) => {
-            logging::log(logging::Priority::Warning, LOGSRC, &format!("Non-existent static asset {} requested", file.as_os_str().to_str().unwrap_or("<INVALID_FILE_NAME>")));
+            logging::log(logging::Priority::Warning, LOGSRC, &format!("Non-existent static asset {} requested", file.as_os_str().to_str().unwrap_or(logging::INV_FILE_NAME)));
             Err(WMSError{ status: rocket::http::Status::NotFound })
         }
     }

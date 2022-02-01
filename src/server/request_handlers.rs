@@ -6,11 +6,14 @@ use uuid::Uuid;
 
 use crate::{mmb, session::uuid_to_str};
 use crate::session;
+use crate::session::JobError;
 use crate::session::session::Session;
 use crate::server::api;
 use crate::server::api::ApiResponse;
 
 const EMPTY: api::Empty = api::Empty{};
+const INTR_SERV_ERR: &'static str = "Internal server error";
+const NO_CMDS: &'static str = "No commands";
 
 fn job_info_to_api(id: &Uuid, info: session::job::JobInfo) -> api::JobInfo {
     api::JobInfo{
@@ -85,7 +88,10 @@ pub fn activate_example(session: Arc<Session>, data: serde_json::Value, path: Pa
             let resp = api::JobCreated{id: session::uuid_to_str(&id)};
             ApiResponse::ok(serde_json::to_value(resp).unwrap())
         },
-        Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+        Err(e) => match e {
+            JobError::BadInput(msg) => ApiResponse::fail(Status::BadRequest, msg),
+            JobError::InternalError => ApiResponse::fail(Status::InternalServerError, String::from(INTR_SERV_ERR)),
+        },
     }
 }
 
@@ -112,7 +118,10 @@ pub fn clone_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
             let resp = api::JobCreated{id: session::uuid_to_str(&id)};
             ApiResponse::ok(serde_json::to_value(resp).unwrap())
         },
-        Err(e) => return ApiResponse::fail(Status::InternalServerError, e),
+        Err(e) => match e {
+            JobError::BadInput(msg) => ApiResponse::fail(Status::BadRequest, msg),
+            JobError::InternalError => ApiResponse::fail(Status::InternalServerError, String::from(INTR_SERV_ERR)),
+        }
     }
 }
 
@@ -135,7 +144,10 @@ pub fn create_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse
             let resp = api::JobCreated{id: session::uuid_to_str(&id)};
             ApiResponse::ok(serde_json::to_value(resp).unwrap())
         },
-        Err(e) => ApiResponse::fail(Status::InternalServerError, e),
+        Err(e) => match e {
+            JobError::BadInput(msg) => ApiResponse::fail(Status::BadRequest, msg),
+            JobError::InternalError => ApiResponse::fail(Status::InternalServerError, String::from(INTR_SERV_ERR)),
+        },
     }
 }
 
@@ -286,7 +298,7 @@ pub fn job_commands(session: Arc<Session>, data: serde_json::Value) -> ApiRespon
                         let resp = api::JobCommands::Synthetic(api::JobCommandsSynthetic{ commands });
                         ApiResponse::ok(serde_json::to_value(resp).unwrap())
                     },
-                    None => ApiResponse::fail(Status::InternalServerError, String::from("No commands")),
+                    None => ApiResponse::fail(Status::InternalServerError, String::from(NO_CMDS)),
                 },
                 Err(e) => ApiResponse::fail(Status::InternalServerError, e),
             }
@@ -298,7 +310,7 @@ pub fn job_commands(session: Arc<Session>, data: serde_json::Value) -> ApiRespon
                         let resp = api::JobCommands::Raw(api::JobCommandsRaw{ commands });
                         ApiResponse::ok(serde_json::to_value(resp).unwrap())
                     },
-                    None => ApiResponse::fail(Status::InternalServerError, String::from("No commands")),
+                    None => ApiResponse::fail(Status::InternalServerError, String::from(NO_CMDS)),
                 },
                 Err(e) => ApiResponse::fail(Status::InternalServerError, e),
             }
@@ -344,7 +356,6 @@ pub fn session_info(session: Arc<Session>) -> ApiResponse {
 }
 
 pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse {
-    println!("start_job hander: {}", data);
     let parsed: serde_json::Result<api::StartJobRqData> = serde_json::from_value(data);
     let start_data = match parsed {
         Ok(data) => data,
@@ -360,13 +371,19 @@ pub fn start_job(session: Arc<Session>, data: serde_json::Value) -> ApiResponse 
         api::JobCommandsNotNone::Synthetic(commands) => {
             match session.start_job(&id, commands.commands) {
                 Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
-                Err(e) => ApiResponse::fail(Status::BadRequest, e),
+                Err(e) => match e {
+                    JobError::BadInput(msg) => ApiResponse::fail(Status::BadRequest, msg),
+                    JobError::InternalError => ApiResponse::fail(Status::InternalServerError, String::from(INTR_SERV_ERR)),
+                },
             }
         },
         api::JobCommandsNotNone::Raw(commands) => {
             match session.start_job_raw(&id, commands.commands) {
                 Ok(()) => ApiResponse::ok(serde_json::to_value(EMPTY).unwrap()),
-                Err(e) => ApiResponse::fail(Status::BadRequest, e),
+                Err(e) => match e {
+                    JobError::BadInput(msg) => ApiResponse::fail(Status::BadRequest, msg),
+                    JobError::InternalError => ApiResponse::fail(Status::InternalServerError, String::from(INTR_SERV_ERR)),
+                },
             }
         },
     }

@@ -4,10 +4,14 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{config, mmb};
+use crate::config;
+use crate::logging;
+use crate::mmb;
 use crate::server::api;
 use crate::session;
-use crate::session::job;
+use crate::session::{job, JobError};
+
+const LOGSRC: &'static str = "session";
 
 struct SessionData {
     jobs: HashMap<Uuid, job::Job>,
@@ -70,26 +74,21 @@ impl Session {
         }
     }
 
-    pub fn create_job(&self, name: String, synthetic_commands: Option<api::Commands>, raw_commands: Option<String>) -> Result<Uuid, String> {
+    pub fn create_job(&self, name: String, synthetic_commands: Option<api::Commands>, raw_commands: Option<String>) -> Result<Uuid, JobError> {
         assert!(!(synthetic_commands.is_some() && raw_commands.is_some()));
 
         if name.len() < 1 {
-            return Err(String::from("Job must have a name"));
+            return Err(JobError::BadInput(String::from("Job must have a name")));
         }
         if self.has_job_by_name(&name) {
-            return Err(format!("Job with name {} already exists", name));
+            return Err(JobError::BadInput(format!("Job with name {} already exists", name)));
         }
 
         let id = Uuid::new_v4();
 
         match prepare_job_dir(&self.jobs_dir, &id) {
             Ok(job_dir) => {
-                match job::Job::create(
-                    name,
-                    job_dir,
-                    synthetic_commands,
-                    raw_commands
-                ) {
+                match job::Job::create(name, job_dir, synthetic_commands, raw_commands) {
                     Ok(job) => {
                         let mut data = self.data.write().unwrap();
                         data.jobs.insert(id, job);
@@ -98,41 +97,43 @@ impl Session {
                     Err(e) => Err(e),
                 }
             },
-            Err(e) => Err(e.to_string()),
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create job directory: {}", e));
+                Err(JobError::InternalError)
+            },
         }
     }
 
-    pub fn clone_job(&self, name: String, src_id: &Uuid) -> Result<Uuid, String> {
+    pub fn clone_job(&self, name: String, src_id: &Uuid) -> Result<Uuid, JobError> {
         if name.len() < 1 {
-            return Err(String::from("Job must have a name"));
+            return Err(JobError::BadInput(String::from("Job must have a name")));
         }
         if self.has_job_by_name(&name) {
-            return Err(format!("Job with name {} already exists", name));
+            return Err(JobError::BadInput(format!("Job with name {} already exists", name)));
         }
 
         let id = Uuid::new_v4();
         let mut data = self.data.write().unwrap();
         let src_job = match data.jobs.get_mut(src_id) {
             Some(v) => v,
-            None => return Err(String::from("No job to clone")),
+            None => return Err(JobError::BadInput(String::from("No job to clone"))),
         };
 
         match src_job.info() {
             Ok(info) => {
                 if info.state == mmb::State::Running {
-                    return Err(String::from("Running jobs cannot be cloned"));
+                    return Err(JobError::BadInput(String::from("Running jobs cannot be cloned")));
                 }
             },
-            Err(e) => return Err(e),
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to get job info for job ID {} that was to be cloned: {}", id, e));
+                return Err(JobError::InternalError);
+            }
         };
 
         match prepare_job_dir(&self.jobs_dir, &id) {
             Ok(job_dir) => {
-                match job::Job::clone(
-                    name,
-                    job_dir,
-                    &src_job
-                ) {
+                match job::Job::clone(name, job_dir, &src_job) {
                     Ok(job) => {
                         data.jobs.insert(id, job);
                         Ok(id)
@@ -140,7 +141,10 @@ impl Session {
                     Err(e) => Err(e),
                 }
             },
-            Err(e) => Err(e.to_string()),
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create job directory: {}", e));
+                Err(JobError::InternalError)
+            },
         }
     }
 
@@ -158,7 +162,10 @@ impl Session {
                     return false;
                 }
             },
-            Err(e) => return false,
+            Err(e) => {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot get info for job ID {}: {}", id, e));
+                return false;
+            },
         };
 
         data.jobs.remove(id);
@@ -311,8 +318,10 @@ impl Session {
 
     pub fn retire_ended_jobs(&self) {
         let mut data = self.data.write().unwrap();
-        for job in data.jobs.values_mut() {
-            job.check_retire();
+        for (id, job) in data.jobs.iter_mut() {
+            if let Err(e) = job.check_retire() {
+                logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot determine if job {} can be retired: {}", id, e.to_string()));
+            }
         }
     }
 
@@ -322,9 +331,9 @@ impl Session {
         data.is_logged_in = login_state;
     }
 
-    pub fn start_job(&self, id: &Uuid, commands: api::Commands) -> Result<(), String> {
+    pub fn start_job(&self, id: &Uuid, commands: api::Commands) -> Result<(), JobError> {
         if !self.has_job(id) {
-            return Err(format!("Job with id {} does not exist", id));
+            return Err(JobError::BadInput(format!("Job with id {} does not exist", id)));
         }
 
         let mut data = self.data.write().unwrap();
@@ -332,9 +341,9 @@ impl Session {
         job.start(commands)
     }
 
-    pub fn start_job_raw(&self, id: &Uuid, raw_commands: String) -> Result<(), String> {
+    pub fn start_job_raw(&self, id: &Uuid, raw_commands: String) -> Result<(), JobError> {
         if !self.has_job(id) {
-            return Err(format!("Job with id {} does not exist", id));
+            return Err(JobError::BadInput(format!("Job with id {} does not exist", id)));
         }
 
         let mut data = self.data.write().unwrap();
@@ -354,6 +363,7 @@ impl Session {
     pub fn terminate_hung_uploads(&self) {
         let mut data = self.data.write().unwrap();
 
+        // @nocheckin: This needs to be handled
         for job in data.jobs.values_mut() {
             job.terminate_hung_uploads();
         }

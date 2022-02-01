@@ -2,11 +2,15 @@ use std::collections::BTreeMap;
 use std::fmt;
 use journald::*;
 
+pub const INV_FILE_NAME: &'static str = "<INVALID_FILE_NAME>";
+pub const INV_FILE_PATH: &'static str = "<INVALID_FILE_PATH>";
+
 const PRIORITY: &'static str = "PRIORITY";
 const SOURCE: &'static str = "SOURCE";
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Priority {
+    Debug = 7,
     Info = 6,
     Warning = 4,
     Error = 3,

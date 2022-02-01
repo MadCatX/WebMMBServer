@@ -11,6 +11,11 @@ use uuid::Uuid;
 
 use crate::mmb;
 
+pub enum JobError {
+    BadInput(String),
+    InternalError,
+}
+
 pub fn trajectory_file_path(base: &PathBuf, session_id: &str, job_id: &str, stage: i32) -> Result<PathBuf, ()> {
     let traj_file = mmb::trajectory_file_name(stage);
     let mut path = PathBuf::new();
