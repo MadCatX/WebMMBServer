@@ -58,11 +58,12 @@ fn make_log_entry(pri: Priority, source: &str, message: &str) -> JournalEntry {
 }
 
 fn log_file(pri: Priority, source: &str, message: &str) {
-    let now = time::PrimitiveDateTime::now();
+    let now = time::OffsetDateTime::now_utc();
     let time_str = format!(
-        "{}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
+        "{}-{:02}-{:02} {:02}:{:02}:{:02}.{:03} ({} UTC)",
         now.year(), now.month(), now.day(),
-        now.hour(), now.minute(), now.second(), now.millisecond()
+        now.hour(), now.minute(), now.second(), now.millisecond(),
+        now.offset()
     );
 
     let tokens = vec![priority_to_text(pri), time_str, source.to_string(), message.to_string()];
