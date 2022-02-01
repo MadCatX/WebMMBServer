@@ -6,11 +6,10 @@ use time;
 
 pub const INV_FILE_NAME: &'static str = "<INVALID_FILE_NAME>";
 pub const INV_FILE_PATH: &'static str = "<INVALID_FILE_PATH>";
+pub const DELIM: &'static str = ";";
 
 const PRIORITY: &'static str = "PRIORITY";
 const SOURCE: &'static str = "SOURCE";
-
-const DELIM: &'static str = ";";
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Priority {
@@ -76,12 +75,12 @@ fn log_journald(pri: Priority, source: &str, message: &str) {
     journald::writer::submit(&entry);
 }
 
-pub fn incoming(pri: Priority, source: &str, remote: Option<IpAddr>, message: &str) {
-    let actual_msg = format!("({}){}{}", addr_to_text(&remote), DELIM, message);
-    log(pri, source, &actual_msg);
+pub fn incoming(pri: Priority, source: &str, remote_addr: Option<IpAddr>, message: &str) {
+    let actual_msg = format!("{}{}{}", addr_to_text(&remote_addr), DELIM, message);
+    plain(pri, source, &actual_msg);
 }
 
-pub fn log(pri: Priority, source: &str, message: &str) {
+pub fn plain(pri: Priority, source: &str, message: &str) {
     log_journald(pri, source, message);
     log_file(pri, source, message);
 }
@@ -94,3 +93,31 @@ pub fn log_startup_message() {
         Err(e) => panic!("Cannot log startup message. Refusing to continue with no logging available.\nError reported: {}", e.to_string())
     }
 }
+
+#[macro_export]
+macro_rules! log_incoming {
+    ($pri:ident, $source:ident, $remote_addr:expr, $($segment:expr),*) => {
+        {
+            let mut msg = String::new();
+            $(
+                msg.push_str($segment); msg.push_str(logging::DELIM);
+            )*
+            logging::incoming(logging::Priority::$pri, $source, $remote_addr, &msg);
+        }
+    };
+}
+pub(crate) use log_incoming;
+
+#[macro_export]
+macro_rules! log_plain {
+    ($pri:ident, $source:ident, $($segment:expr),*) => {
+        {
+            let mut msg = String::new();
+            $(
+                msg.push_str($segment); msg.push_str(logging::DELIM);
+            )*
+            logging::plain(logging::Priority::$pri, $source, &msg);
+        }
+    };
+}
+pub(crate) use log_plain;

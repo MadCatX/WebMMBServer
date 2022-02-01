@@ -6,6 +6,7 @@ use rocket::request::Request;
 
 use crate::server::{api, LOGSRC};
 use crate::logging;
+use crate::logging::log_incoming;
 
 const MAX_JSON_SIZE: usize = 4 * 1024 * 1024;
 const MAX_CHUNK_SIZE: usize = 8 * 1024 * 1024;
@@ -35,13 +36,13 @@ impl<'a> FromData<'a> for IncomingApiRequest {
                         Outcome::Success(IncomingApiRequest{ payload: apiReq, remote_addr })
                     },
                     Err(e) => {
-                        logging::incoming(logging::Priority::Warning, LOGSRC, remote_addr, &format!("Malformed api request: {}", e.to_string()));
+                        log_incoming!(Warning, LOGSRC, remote_addr, &format!("Malformed api request: {}", e.to_string()));
                         Outcome::Failure((Status::BadRequest, String::from("Malformed request")))
                     }
                 }
             },
             Err(e) => {
-                logging::incoming(logging::Priority::Warning, LOGSRC, remote_addr, &format!("Cannot get api request message body: {}", e.to_string()));
+                log_incoming!(Warning, LOGSRC, remote_addr, &format!("Cannot get api request message body: {}", e.to_string()));
                 Outcome::Failure((Status::InternalServerError, String::from("Cannot process api request")))
             },
         }
@@ -61,13 +62,13 @@ impl<'a> FromData<'a> for IncomingAuthRequest {
                 match serde_json::from_str::<api::AuthRequest>(&payload) {
                     Ok(auth) => Outcome::Success(IncomingAuthRequest{ payload: auth, remote_addr }),
                     Err(e) => {
-                        logging::incoming(logging::Priority::Warning, LOGSRC, remote_addr, &format!("Malformed authentication request: {}", e.to_string()));
+                        log_incoming!(Warning, LOGSRC, remote_addr, &format!("Malformed authentication request: {}", e.to_string()));
                         Outcome::Failure((Status::BadRequest, String::from("Malformed request")))
                     }
                 }
             },
             Err(e) => {
-                logging::incoming(logging::Priority::Warning, LOGSRC, remote_addr, &format!("Cannot get authentication request message body: {}", e.to_string()));
+                log_incoming!(Warning, LOGSRC, remote_addr, &format!("Cannot get authentication request message body: {}", e.to_string()));
                 Outcome::Failure((Status::InternalServerError, String::from("Cannot process authentication request")))
             },
         }
@@ -85,20 +86,20 @@ impl<'a> FromData<'a> for api::FileTransferChunk {
         match stream.into_bytes().await {
             Ok(payload) => {
                 if !payload.is_complete() {
-                    logging::incoming(logging::Priority::Warning, LOGSRC, remote_addr, &format!("FileTransferChunk payload was capped prematurely at {} bytes", payload.n));
+                    log_incoming!(Warning, LOGSRC, remote_addr, &format!("FileTransferChunk payload was capped prematurely at {} bytes", payload.n));
                     return Outcome::Failure((Status::BadRequest, String::from("Too long request")));
                 } else {
                     match api::FileTransferChunk::from_bytes(&payload.value) {
                         Ok(chunk) => Outcome::Success(chunk),
                         Err(e) => {
-                            logging::incoming(logging::Priority::Warning, LOGSRC, remote_addr, &format!("Malformed payload for FileTransferChunk: {}", e.to_string()));
+                            log_incoming!(Warning, LOGSRC, remote_addr, &format!("Malformed payload for FileTransferChunk: {}", e.to_string()));
                             Outcome::Failure((Status::BadRequest, String::from("Malformed file transfer chunk request")))
                         },
                     }
                 }
             },
             Err(e) => {
-                logging::incoming(logging::Priority::Warning, LOGSRC, remote_addr, &format!("Cannot get file transfer chunk request body: {}", e.to_string()));
+                log_incoming!(Warning, LOGSRC, remote_addr, &format!("Cannot get file transfer chunk request body: {}", e.to_string()));
                 Outcome::Failure((Status::InternalServerError, String::from("Cannot process file transfer request")))
             },
         }

@@ -6,6 +6,7 @@ use rocket::response::{self, Response, Responder};
 use serde_json;
 
 use crate::logging;
+use crate::logging::log_plain;
 use crate::server::{api, LOGSRC};
 
 impl api::ApiResponse {
@@ -76,7 +77,7 @@ impl<'a, 'b: 'a> Responder<'a, 'b> for DensityFile {
 
         let mut payload = Vec::<u8>::new();
         if let Err(e) = fh.read_to_end(&mut payload) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot read DensityFile {}: {}", file_name, e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Cannot read DensityFile {}: {}", file_name, e.to_string()));
             return Err(Status::InternalServerError);
         }
 
@@ -103,7 +104,7 @@ impl<'a, 'b: 'a> Responder<'a, 'b> for PdbFile {
 
         let mut payload = Vec::<u8>::new();
         if let Err(e) = fh.read_to_end(&mut payload) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot read PdbFile {}: {}", self.path.as_os_str().to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Cannot read PdbFile {}: {}", self.path.as_os_str().to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
             return Err(Status::InternalServerError);
         }
 

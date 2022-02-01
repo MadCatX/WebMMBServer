@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::config;
 use crate::logging;
+use crate::logging::log_plain;
 use crate::mmb;
 use crate::server::api;
 use crate::session;
@@ -98,7 +99,7 @@ impl Session {
                 }
             },
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create job directory: {}", e));
+                log_plain!(Error, LOGSRC, &format!("Failed to create job directory: {}", e));
                 Err(JobError::InternalError)
             },
         }
@@ -126,7 +127,7 @@ impl Session {
                 }
             },
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to get job info for job ID {} that was to be cloned: {}", id, e));
+                log_plain!(Error, LOGSRC, &format!("Failed to get job info for job ID {} that was to be cloned: {}", id, e));
                 return Err(JobError::InternalError);
             }
         };
@@ -142,7 +143,7 @@ impl Session {
                 }
             },
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create job directory: {}", e));
+                log_plain!(Error, LOGSRC, &format!("Failed to create job directory: {}", e));
                 Err(JobError::InternalError)
             },
         }
@@ -163,7 +164,7 @@ impl Session {
                 }
             },
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot get info for job ID {}: {}", id, e));
+                log_plain!(Error, LOGSRC, &format!("Cannot get info for job ID {}: {}", id, e));
                 return false;
             },
         };
@@ -320,7 +321,7 @@ impl Session {
         let mut data = self.data.write().unwrap();
         for (id, job) in data.jobs.iter_mut() {
             if let Err(e) = job.check_retire() {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot determine if job {} can be retired: {}", id, e.to_string()));
+                log_plain!(Error, LOGSRC, &format!("Cannot determine if job {} can be retired: {}", id, e.to_string()));
             }
         }
     }

@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::config;
 use crate::logging;
+use crate::logging::log_plain;
 use crate::mmb;
 use crate::server::api;
 
@@ -127,7 +128,7 @@ fn clear_stages(path: &PathBuf, stage: i32) -> Result<(), String> {
 
         if n >= stage {
             if let Err(e) = std::fs::remove_file(&p) {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete file {}: {}", p.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+                log_plain!(Error, LOGSRC, &format!("Cannot delete file {}: {}", p.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
                 some_failed_to_delete = true;
             }
         }
@@ -298,7 +299,7 @@ fn read_mmb_progress(path: &Path) -> Result<Option<Progress>, String> {
         Ok(locked) => locked,
         Err(e) => {
             /* Error here may indicate that the progress file is locked by MMB */
-            logging::log(logging::Priority::Debug, LOGSRC, &format!("Cannot lock progress file {}: {}", path_str, e.to_string()));
+            log_plain!(Debug, LOGSRC, &format!("Cannot lock progress file {}: {}", path_str, e.to_string()));
             return Ok(None);
         },
     };
@@ -360,7 +361,7 @@ impl Job {
         match copy_job_dir(&job_dir, &src.job_dir) {
             Ok(_) => (),
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to copy job directory for cloned job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                log_plain!(Error, LOGSRC, &format!("Failed to copy job directory for cloned job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
                 return Err(JobError::InternalError);
             },
         };
@@ -372,7 +373,7 @@ impl Job {
         let runner = match mk_runner() {
             Ok(runner) => runner,
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create runner for cloned job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                log_plain!(Error, LOGSRC, &format!("Failed to create runner for cloned job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
                 return Err(JobError::InternalError);
             }
         };
@@ -424,7 +425,7 @@ impl Job {
         let runner = match mk_runner() {
             Ok(runner) => runner,
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create runner for new job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                log_plain!(Error, LOGSRC, &format!("Failed to create runner for new job {}: {}", job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
                 return Err(JobError::InternalError);
             },
         };
@@ -635,14 +636,14 @@ impl Job {
             return Err(JobError::InternalError);
         }
         if let Err(e) = mmb::commands::write(&self.cmds_file_path, self.commands.as_ref().unwrap()) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to write job commands file {}: {}", &self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+            log_plain!(Error, LOGSRC, &format!("Failed to write job commands file {}: {}", &self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e));
             return Err(JobError::InternalError);
         }
 
         match self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path()) {
             Ok(()) => Ok(()),
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("JobRunner failed to start job {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                log_plain!(Error, LOGSRC, &format!("JobRunner failed to start job {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
                 Err(JobError::InternalError)
             }
         }
@@ -668,7 +669,7 @@ impl Job {
             return Err(JobError::InternalError);
         }
         if let Err(e) = mmb::commands::write_raw(&self.cmds_file_path, &raw_commands) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to write raw job commands file {}: {}", &self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Failed to write raw job commands file {}: {}", &self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
             return Err(JobError::InternalError);
         }
         self.raw_commands = Some(raw_commands);
@@ -676,7 +677,7 @@ impl Job {
         match self.runner.start(self.job_dir.clone(), self.cmds_file_path.as_path(), self.diag_file_path.as_path(), self.progress_file_path.as_path()) {
             Ok(()) => Ok(()),
             Err(e) => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("JobRunner failed to start raw job {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
+                log_plain!(Error, LOGSRC, &format!("JobRunner failed to start raw job {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e));
                 Err(JobError::InternalError)
             },
         }
@@ -697,7 +698,7 @@ impl Job {
                     }
                 },
                 Err(e) => {
-                    logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to get system time: {}", e.to_string()));
+                    log_plain!(Error, LOGSRC, &format!("Failed to get system time: {}", e.to_string()));
                     return Err(());
                 },
             }
@@ -736,7 +737,7 @@ impl Job {
         path.push(file_path);
 
         if let Err(e) = std::fs::remove_file(&path) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete file {}: {}", path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Cannot delete file {}: {}", path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
         }
     }
 
@@ -744,17 +745,17 @@ impl Job {
         let mut failed = false;
 
         if let Err(e) = remove_file(self.cmds_file_path.as_path()) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to delete commands file {}: {}", self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Failed to delete commands file {}: {}", self.cmds_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
             failed = true;
         }
 
         if let Err(e) = remove_file(self.diag_file_path.as_path()) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to delete diagnostics file {}: {}", self.diag_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Failed to delete diagnostics file {}: {}", self.diag_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
             failed = true;
         }
 
         if let Err(e) = remove_file(self.progress_file_path.as_path()) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to delete progress file {}: {}", self.progress_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Failed to delete progress file {}: {}", self.progress_file_path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
             failed = true;
         }
 
@@ -763,7 +764,7 @@ impl Job {
         }
 
         if let Err(e) = self.runner.prune_job_dir(self.job_dir.clone()) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot prune JobRunner-specific files: {}", e));
+            log_plain!(Error, LOGSRC, &format!("Cannot prune JobRunner-specific files: {}", e));
             failed = true;
         }
 
@@ -779,10 +780,10 @@ impl Job {
         let mut path = self.job_dir.clone();
         path.push(&file_name);
         if let Err(e) = std::fs::remove_file(&path) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete partially transferred file of hung transfer {}: {}", path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Cannot delete partially transferred file of hung transfer {}: {}", path.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
         }
 
-        logging::log(logging::Priority::Info, LOGSRC, "Terminating hung file transfer");
+        log_plain!(Info, LOGSRC, "Terminating hung file transfer");
     }
 }
 
@@ -794,7 +795,7 @@ impl Drop for Job {
         }
 
         if let Err(e) = std::fs::remove_dir_all(&self.job_dir) {
-            logging::log(logging::Priority::Error, LOGSRC, &format!("Cannot delete job directory {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
+            log_plain!(Error, LOGSRC, &format!("Cannot delete job directory {}: {}", &self.job_dir.to_str().unwrap_or(logging::INV_FILE_PATH), e.to_string()));
         }
         println!("Job dropped");
     }

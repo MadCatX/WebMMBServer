@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::config;
 use crate::logging;
+use crate::logging::{log_incoming, log_plain};
 use crate::session;
 use crate::server::api as srvapi;
 use crate::server::{request_handlers, session_cookie, transfer_handlers, LOGSRC};
@@ -81,7 +82,7 @@ impl<'a> rocket::request::FromRequest<'a> for SessionId {
                     }
             },
             _ => {
-                logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to get application state"));
+                log_plain!(Error, LOGSRC, "Failed to get application state");
                 rocket::request::Outcome::Failure((rocket::http::Status::InternalServerError, String::from("Internal server error")))
             }
         }
@@ -140,11 +141,11 @@ fn auth_verify(auth: IncomingAuthRequest, jar: &rocket::http::CookieJar<'_>, sta
                 jar.add_private(c);
                 match state.sm.write().unwrap().create_session(&id) {
                     Ok(_) => {
-                        logging::incoming(logging::Priority::Info, LOGSRC, auth.remote_addr, &format!("Opening session {}", id));
+                        log_incoming!(Info, LOGSRC, auth.remote_addr, &format!("Opening session {}", id));
                         srvapi::AuthResponse{ status: rocket::http::Status::Ok, message: String::new() }
                     }
                     Err(e) => {
-                        logging::log(logging::Priority::Error, LOGSRC, &format!("Failed to create session: {}", e));
+                        log_plain!(Error, LOGSRC, &format!("Failed to create session: {}", e));
                         srvapi::AuthResponse{ status: rocket::http::Status::InternalServerError, message: String::from("Cannot create session") }
                     }
                 }
@@ -167,7 +168,7 @@ fn auth_verify(auth: IncomingAuthRequest, jar: &rocket::http::CookieJar<'_>, sta
         srvapi::AuthRequest::LogOut(_) => {
             match session_cookie::get_session_id(jar) {
                 Some(sid) => {
-                    logging::incoming(logging::Priority::Info, LOGSRC, auth.remote_addr, &format!("Closing session {}", sid));
+                    log_incoming!(Info, LOGSRC, auth.remote_addr, &format!("Closing session {}", sid));
                     state.sm.write().unwrap().destroy_session(&sid)
                 }
                 None => (),
@@ -214,7 +215,7 @@ async fn static_files(file: PathBuf) -> Result<rocket::fs::NamedFile, WMSError> 
     match rocket::fs::NamedFile::open(Path::new("assets/").join(&file)).await {
         Ok(file) => Ok(file),
         Err(_) => {
-            logging::log(logging::Priority::Warning, LOGSRC, &format!("Non-existent static asset {} requested", file.as_os_str().to_str().unwrap_or(logging::INV_FILE_NAME)));
+            log_plain!(Warning, LOGSRC, &format!("Non-existent static asset {} requested", file.as_os_str().to_str().unwrap_or(logging::INV_FILE_NAME)));
             Err(WMSError{ status: rocket::http::Status::NotFound })
         }
     }
@@ -249,7 +250,7 @@ fn api(data: IncomingApiRequest, jar: &rocket::http::CookieJar<'_>, state: &rock
         None => return Err(WMSError{ status: rocket::http::Status::Forbidden }),
     };
 
-    logging::incoming(logging::Priority::Info, LOGSRC, data.remote_addr, &format!("ApiRequest {}", data.payload));
+    log_incoming!(Info, LOGSRC, data.remote_addr, &format!("ApiRequest {}", data.payload));
 
     match data.payload {
         srvapi::ApiRequest::StartJob(v) => Ok(request_handlers::start_job(s, v.data)),

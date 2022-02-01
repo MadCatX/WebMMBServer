@@ -9,6 +9,8 @@ mod pbs;
 mod server;
 mod session;
 
+const LOGSRC: &'static str = "main";
+
 fn init() {
     let p = std::path::Path::new(config::get().jobs_dir.as_str());
     if !std::path::Path::is_dir(p) {
@@ -17,7 +19,7 @@ fn init() {
         match db.create(p) {
             Ok(()) => (),
             Err(e) => {
-                logging::log(logging::Priority::Critical, "core", &format!("Failed to create working directory: {}", e.to_string()));
+                log_plain!(Critical, LOGSRC, &format!("Failed to create working directory: {}", e.to_string()));
                 panic!();
             },
         }
