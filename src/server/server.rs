@@ -60,7 +60,6 @@ impl fmt::Display for srvapi::ApiRequest {
 impl<'a> rocket::request::FromRequest<'a> for SessionId {
     type Error = String;
 
-    // REVIEW: Look into these Forwardings
     async fn from_request(request: &'a rocket::request::Request<'_>) -> rocket::request::Outcome<Self, Self::Error> {
         match request.guard::<&rocket::State<AppState>>().await {
             rocket::request::Outcome::Success(state) => {
@@ -84,7 +83,7 @@ impl<'a> rocket::request::FromRequest<'a> for SessionId {
             _ => {
                 log_plain!(Error, LOGSRC, "Failed to get application state");
                 rocket::request::Outcome::Failure((rocket::http::Status::InternalServerError, String::from("Internal server error")))
-            }
+            },
         }
     }
 }
