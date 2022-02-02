@@ -1,5 +1,5 @@
 use std::io::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use rand;
 use rand::Rng;
 use std::sync::Mutex;
@@ -52,22 +52,6 @@ lazy_static! {
     );
 }
 
-fn check_dir_exists(path: &str) {
-    let p = std::path::Path::new(path);
-    if !std::path::Path::is_dir(p) {
-        log_plain!(Critical, LOGSRC, &format!("Invalid configuration, {} does not exist or it is not a directory", path));
-        panic!();
-    }
-}
-
-fn check_file_exists(path: &str) {
-    let p = std::path::Path::new(path);
-    if !std::path::Path::is_file(p) {
-        log_plain!(Critical, LOGSRC, &format!("Invalid configuration, {} does not exist or it is not a file", path));
-        panic!();
-    }
-}
-
 fn oneshot_secret_key() -> String {
     let mut rng = rand::thread_rng();
     let mut random_blob = Vec::from(rng.gen::<[u8; 32]>());
@@ -101,6 +85,11 @@ pub fn get() -> Config {
 }
 
 pub fn load(cfg_path: PathBuf) {
+    if !Path::new(&cfg_path).is_file() {
+        log_early!(Warning, LOGSRC, "No configuration files. Continuing with defaults but this will most likely fail.");
+        return;
+    }
+
     let cfg: Config = match serde_json::from_str(read_config(&cfg_path).as_str()) {
         Ok(cfg) => cfg,
         Err(e) => {
@@ -109,10 +98,6 @@ pub fn load(cfg_path: PathBuf) {
         }
     };
 
-    check_file_exists(&cfg.mmb_exec_path);
-    check_file_exists(&cfg.mmb_parameters_path);
-    check_dir_exists(&cfg.examples_dir);
-    check_dir_exists(&cfg.root_dir);
     if cfg.domain.len() < 1 {
         log_plain!(Critical, LOGSRC, "Invalid configuration - no domain name: {}");
         panic!();

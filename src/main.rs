@@ -27,6 +27,28 @@ fn arguments() -> ArgMatches<'static> {
 fn check_and_prepare() {
     let cfg = config::get();
 
+    let mut is_ok = true;
+    if !Path::new(&cfg.mmb_exec_path).is_file() {
+        log_plain!(Critical, LOGSRC, "Configuration contains invalid path to MMB executable");
+        is_ok = false;
+    }
+    if !Path::new(&cfg.mmb_parameters_path).is_file() {
+        log_plain!(Critical, LOGSRC, "Configuration contains invalid path to MMB parameters file");
+        is_ok = false;
+    }
+    if !Path::new(&cfg.examples_dir).is_dir() {
+        log_plain!(Critical, LOGSRC, "Configuration contains invalid path to examples directory");
+        is_ok = false;
+    }
+    if !Path::new(&cfg.root_dir).is_dir() {
+        log_plain!(Critical, LOGSRC, "Configuration contains invalid path to server root directory");
+        is_ok = false;
+    }
+
+    if !is_ok {
+        panic!();
+    }
+
     let p = Path::new(cfg.jobs_dir.as_str());
     if !Path::is_dir(p) {
         let mut db = std::fs::DirBuilder::new();
