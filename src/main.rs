@@ -28,7 +28,8 @@ fn init() {
 
 #[rocket::launch]
 fn liftoff() -> _ {
-    logging::log_startup_message();
+    log_early!(Info, LOGSRC, "WebMMB server starting up");
+
     init();
 
     server::start()

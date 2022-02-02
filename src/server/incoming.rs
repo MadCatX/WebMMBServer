@@ -6,7 +6,7 @@ use rocket::request::Request;
 
 use crate::server::{api, LOGSRC};
 use crate::logging;
-use crate::logging::log_incoming;
+use crate::log_incoming;
 
 const MAX_JSON_SIZE: usize = 4 * 1024 * 1024;
 const MAX_CHUNK_SIZE: usize = 8 * 1024 * 1024;

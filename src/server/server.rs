@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::config;
 use crate::logging;
-use crate::logging::{log_incoming, log_plain};
+use crate::{log_incoming, log_plain};
 use crate::session;
 use crate::server::api as srvapi;
 use crate::server::{request_handlers, session_cookie, transfer_handlers, LOGSRC};

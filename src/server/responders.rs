@@ -6,7 +6,7 @@ use rocket::response::{self, Response, Responder};
 use serde_json;
 
 use crate::logging;
-use crate::logging::log_plain;
+use crate::log_plain;
 use crate::server::{api, LOGSRC};
 
 impl api::ApiResponse {

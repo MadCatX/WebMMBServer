@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config;
 use crate::logging;
-use crate::logging::log_plain;
+use crate::log_plain;
 use crate::mmb;
 use crate::pbs;
 use super::job_runner;

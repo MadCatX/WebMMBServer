@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::config;
 use crate::logging;
-use crate::logging::log_plain;
+use crate::log_plain;
 use crate::mmb;
 use crate::server::api;
 use crate::session;

@@ -5,7 +5,7 @@ use serde_derive::Deserialize;
 use serde_json;
 
 use crate::logging;
-use crate::logging::log_plain;
+use crate::log_plain;
 
 const LOGSRC: &'static str= "config";
 

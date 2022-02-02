@@ -45,7 +45,7 @@ fn priority_to_text(pri: Priority) -> String {
     text.to_uppercase()
 }
 
-fn make_log_entry(pri: Priority, source: &str, message: &str) -> JournalEntry {
+fn make_journald_entry(pri: Priority, source: &str, message: &str) -> JournalEntry {
     let mut fields = BTreeMap::new();
 
     fields.insert(String::from(PRIORITY), pri.to_string());
@@ -57,7 +57,7 @@ fn make_log_entry(pri: Priority, source: &str, message: &str) -> JournalEntry {
     entry
 }
 
-fn log_file(pri: Priority, source: &str, message: &str) {
+fn make_text_entry(pri: Priority, source: &str, message: &str) -> String {
     let now = time::OffsetDateTime::now_utc();
     let time_str = format!(
         "{}-{:02}-{:02} {:02}:{:02}:{:02}.{:03} ({} UTC)",
@@ -66,14 +66,24 @@ fn log_file(pri: Priority, source: &str, message: &str) {
         now.offset()
     );
 
-    let tokens = vec![priority_to_text(pri), time_str, source.to_string(), message.to_string()];
-
-    println!("{}", tokens.into_iter().fold(String::new(), |a, b| a + &b + DELIM));
+    vec![priority_to_text(pri), time_str, source.to_string(), message.to_string()].join(DELIM)
 }
 
-fn log_journald(pri: Priority, source: &str, message: &str) {
-    let entry = make_log_entry(pri, source, message);
+fn write_to_file(entry: &str) {
+}
+
+fn write_to_journald(pri: Priority, source: &str, message: &str) {
+    let entry = make_journald_entry(pri, source, message);
     journald::writer::submit(&entry);
+}
+
+fn write_to_stdout(entry: &str) {
+    println!("{}", entry);
+}
+
+pub fn early(pri: Priority, source: &str, message: &str) {
+    write_to_journald(pri, source, message);
+    write_to_stdout(&make_text_entry(pri, source, message));
 }
 
 pub fn incoming(pri: Priority, source: &str, remote_addr: Option<IpAddr>, message: &str) {
@@ -82,43 +92,36 @@ pub fn incoming(pri: Priority, source: &str, remote_addr: Option<IpAddr>, messag
 }
 
 pub fn plain(pri: Priority, source: &str, message: &str) {
-    log_journald(pri, source, message);
-    log_file(pri, source, message);
+    write_to_journald(pri, source, message);
+    write_to_file(&make_text_entry(pri, source, message));
 }
 
-pub fn log_startup_message() {
-    let entry = make_log_entry(Priority::Info, "core", "WebMMB server is starting up...");
-
-    match journald::writer::submit(&entry) {
-        Ok(()) => (),
-        Err(e) => panic!("Cannot log startup message. Refusing to continue with no logging available.\nError reported: {}", e.to_string())
-    }
+#[macro_export]
+macro_rules! log_early {
+    ($pri:ident, $source:ident, $($segment:expr),*) => {
+        {
+            let msg = vec![$(String::from($segment),)*].join(logging::DELIM);
+            logging::early(logging::Priority::$pri, $source, &msg);
+        }
+    };
 }
 
 #[macro_export]
 macro_rules! log_incoming {
     ($pri:ident, $source:ident, $remote_addr:expr, $($segment:expr),*) => {
         {
-            let mut msg = String::new();
-            $(
-                msg.push_str($segment); msg.push_str(logging::DELIM);
-            )*
+            let msg = vec![$(String::from($segment),)*].join(logging::DELIM);
             logging::incoming(logging::Priority::$pri, $source, $remote_addr, &msg);
         }
     };
 }
-pub(crate) use log_incoming;
 
 #[macro_export]
 macro_rules! log_plain {
     ($pri:ident, $source:ident, $($segment:expr),*) => {
         {
-            let mut msg = String::new();
-            $(
-                msg.push_str($segment); msg.push_str(logging::DELIM);
-            )*
+            let msg = vec![$(String::from($segment),)*].join(logging::DELIM);
             logging::plain(logging::Priority::$pri, $source, &msg);
         }
     };
 }
-pub(crate) use log_plain;
