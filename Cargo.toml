@@ -13,8 +13,9 @@ file-lock = "^1.1.20"
 lazy_static = "^1.4.0"
 journald = "^0.7.0"
 nix = "^0.19.0"
-rocket = { version = "^0.5.0-rc.1", features = ["secrets"] }
+rand = "^0.8.4"
 regex = "1"
+rocket = { version = "^0.5.0-rc.1", features = ["secrets"] }
 serde = "^1.0.125"
 serde_derive = "^1.0.125"
 serde_json = "^1.0.64"

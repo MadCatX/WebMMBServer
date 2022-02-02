@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::fmt;
+use base64;
 use rocket;
 use uuid::Uuid;
 
@@ -353,6 +354,19 @@ pub fn start() -> rocket::Rocket<rocket::Build> {
     srv_cfg.log_level = match cfg.verbose_rocket_logging {
         true => rocket::config::LogLevel::Normal,
         false => rocket::config::LogLevel::Critical,
+    };
+    srv_cfg.secret_key = match base64::decode(cfg.secret_key) {
+        Ok(bytes) => {
+            if bytes.len() < 64 {
+                log_plain!(Critical, LOGSRC, &format!("Value of secret_key must be at least 64 bytes long, got {}", bytes.len()));
+                panic!()
+            }
+            rocket::config::SecretKey::from(&bytes)
+        },
+        Err(e) => {
+            log_plain!(Critical, LOGSRC, "Value of secret_key in configuration is not a base64 encoded string");
+            panic!();
+        }
     };
 
     rocket::custom(srv_cfg)
