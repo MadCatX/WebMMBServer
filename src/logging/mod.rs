@@ -4,10 +4,12 @@ use std::fs::File;
 use std::io::Write;
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use journald::*;
 use lazy_static::lazy_static;
 use time;
+
+use crate::config;
 
 pub const INV_FILE_NAME: &'static str = "<INVALID_FILE_NAME>";
 pub const INV_FILE_PATH: &'static str = "<INVALID_FILE_PATH>";
@@ -18,15 +20,14 @@ const LOGSRC: &'static str = "logger";
 const PRIORITY: &'static str = "PRIORITY";
 const SOURCE: &'static str = "SOURCE";
 
-struct LoggerConfig {
+struct Logger {
     pub log_file: Option<File>,
-    pub log_to_stdout: bool,
 }
 lazy_static! {
-    static ref CONFIG: Mutex<Option<LoggerConfig>> = Mutex::new(None);
+    static ref LOGGER: Mutex<Logger> = Mutex::new(Logger{ log_file: None });
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum Priority {
     Debug = 7,
     Info = 6,
@@ -34,6 +35,16 @@ pub enum Priority {
     Error = 3,
     Critical = 2,
 }
+impl From<crate::config::LogLevel> for Priority {
+    fn from(pri: crate::config::LogLevel) -> Self {
+        match pri {
+            crate::config::LogLevel::Debug => Priority::Debug,
+            crate::config::LogLevel::Info => Priority::Info,
+            crate::config::LogLevel::Warning => Priority::Warning,
+        }
+    }
+}
+
 macro_rules! priority_text {
     ($var:ident, $($item:ident),*) => {
         match $var {
@@ -56,8 +67,7 @@ fn addr_to_text(addr: &Option<IpAddr>) -> String {
 }
 
 fn priority_to_text(pri: Priority) -> String {
-    let text = priority_text!(pri, Debug, Info, Warning, Error, Critical);
-    text.to_uppercase()
+    priority_text!(pri, Debug, Info, Warning, Error, Critical).to_uppercase()
 }
 
 fn make_journald_entry(pri: Priority, source: &str, message: &str) -> JournalEntry {
@@ -100,51 +110,45 @@ fn write_to_stdout(entry: &str) {
     println!("{}", entry);
 }
 
-pub fn init(log_file_path: Option<PathBuf>, log_to_stdout: bool) {
-    let mut cfg = CONFIG.lock().unwrap();
-    if cfg.is_some() {
-        early(Priority::Critical, LOGSRC, "Attempted to initialize already initialized logger");
-        panic!();
-    }
+pub fn init(log_file_path: Option<PathBuf>) {
+    let mut logger = Logger{ log_file: None };
 
-    let log_file = match log_file_path {
+    match log_file_path {
         Some(path) => match File::create(&path) {
             Ok(fh) => {
-                early(Priority::Debug, LOGSRC, &format!("Opened log file {}", path.to_str().unwrap_or(INV_FILE_PATH)));
-                Some(fh)
+                _early(Priority::Debug, LOGSRC, &format!("Opened log file {}", path.to_str().unwrap_or(INV_FILE_PATH)));
+                logger.log_file = Some(fh);
             },
             Err(e) => {
-                early(Priority::Error, LOGSRC, &format!("Failed to open log file {}: {}", path.to_str().unwrap_or(INV_FILE_PATH), e.to_string()));
-                None
+                _early(Priority::Error, LOGSRC, &format!("Failed to open log file {}: {}", path.to_str().unwrap_or(INV_FILE_PATH), e.to_string()));
+                logger.log_file = None;
             }
         },
-        None => None,
+        None => logger.log_file = None,
     };
 
-    cfg.replace(LoggerConfig{ log_file, log_to_stdout });
+    *LOGGER.lock().unwrap() = logger;
 }
 
-pub fn early(pri: Priority, source: &str, message: &str) {
+pub fn _early(pri: Priority, source: &str, message: &str) {
     write_to_journald(pri, source, message);
     write_to_stdout(&make_text_entry(pri, source, message));
 }
 
-pub fn incoming(pri: Priority, source: &str, remote_addr: Option<IpAddr>, message: &str) {
+pub fn _incoming(pri: Priority, source: &str, remote_addr: Option<IpAddr>, message: &str, cfg: Arc<config::Config>) {
     let actual_msg = format!("{}{}{}", addr_to_text(&remote_addr), DELIM, message);
-    plain(pri, source, &actual_msg);
+    _plain(pri, source, &actual_msg, cfg);
 }
 
-pub fn plain(pri: Priority, source: &str, message: &str) {
+pub fn _plain(pri: Priority, source: &str, message: &str, cfg: Arc<config::Config>) {
     write_to_journald(pri, source, message);
 
     let text = make_text_entry(pri, source, message);
-    if let Some(cfg) = CONFIG.lock().unwrap().as_mut() {
-        if let Some(fh) = cfg.log_file.as_mut() {
-            write_to_file(text.clone(), fh);
-        }
-        if cfg.log_to_stdout {
-            write_to_stdout(&text);
-        }
+    if cfg.log_to_stdout.get() {
+        write_to_stdout(&text);
+    }
+    if let Some(fh) = LOGGER.lock().as_mut().unwrap().log_file.as_mut() {
+        write_to_file(text.clone(), fh);
     }
 }
 
@@ -153,7 +157,7 @@ macro_rules! log_early {
     ($pri:ident, $source:ident, $($segment:expr),*) => {
         {
             let msg = vec![$(String::from($segment),)*].join(logging::DELIM);
-            logging::early(logging::Priority::$pri, $source, &msg);
+            logging::_early(logging::Priority::$pri, $source, &msg);
         }
     };
 }
@@ -162,8 +166,11 @@ macro_rules! log_early {
 macro_rules! log_incoming {
     ($pri:ident, $source:ident, $remote_addr:expr, $($segment:expr),*) => {
         {
-            let msg = vec![$(String::from($segment),)*].join(logging::DELIM);
-            logging::incoming(logging::Priority::$pri, $source, $remote_addr, &msg);
+            let cfg = crate::config::get();
+            if logging::Priority::from(cfg.log_level) >= logging::Priority::$pri {
+                let msg = vec![$(String::from($segment),)*].join(logging::DELIM);
+                logging::_incoming(logging::Priority::$pri, $source, $remote_addr, &msg, cfg);
+            }
         }
     };
 }
@@ -172,8 +179,11 @@ macro_rules! log_incoming {
 macro_rules! log_plain {
     ($pri:ident, $source:ident, $($segment:expr),*) => {
         {
-            let msg = vec![$(String::from($segment),)*].join(logging::DELIM);
-            logging::plain(logging::Priority::$pri, $source, &msg);
+            let cfg = crate::config::get();
+            if logging::Priority::from(cfg.log_level) >= logging::Priority::$pri {
+                let msg = vec![$(String::from($segment),)*].join(logging::DELIM);
+                logging::_plain(logging::Priority::$pri, $source, &msg, cfg);
+            }
         }
     };
 }

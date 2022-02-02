@@ -75,7 +75,7 @@ fn init_logging() {
         None => None,
     };
 
-    logging::init(log_file_path, cfg.log_to_stdout.get());
+    logging::init(log_file_path);
 }
 
 #[rocket::launch]

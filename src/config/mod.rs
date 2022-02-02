@@ -1,8 +1,8 @@
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 use rand;
 use rand::Rng;
-use std::sync::Mutex;
 use base64;
 use lazy_static::lazy_static;
 use serde_derive::Deserialize;
@@ -20,7 +20,17 @@ impl LogToStdOut {
     pub fn get(&self) -> bool { self.0 }
 }
 impl Default for LogToStdOut {
-    fn default() -> Self { LogToStdOut(false) }
+    fn default() -> Self { LogToStdOut(true) }
+}
+
+#[derive(Clone, Copy, Deserialize, Debug)]
+pub enum LogLevel {
+    Debug,
+    Info,
+    Warning,
+}
+impl Default for LogLevel {
+    fn default() -> Self { LogLevel::Info }
 }
 
 #[derive(Clone, Deserialize)]
@@ -43,24 +53,29 @@ pub struct Config {
     pub log_file: Option<String>,
     #[serde(default)]
     pub log_to_stdout: LogToStdOut,
+    #[serde(default)]
+    pub log_level: LogLevel,
 }
 lazy_static! {
-    static ref CONFIG: Mutex<Config> = Mutex::new(
-        Config{
-            mmb_exec_path: String::from("/usr/bin/MMB"),
-            mmb_parameters_path: String::from("/usr/share/include/MMB/parameters.csv"),
-            jobs_dir: String::from("/tmp/webmmb_server"),
-            examples_dir: String::from("/srv/www/webmmb_server/examples"),
-            root_dir: String::from("/srv/www/webmmb_server/"),
-            secret_key: oneshot_secret_key(),
-            domain: String::from("localhost"),
-            port: 443,
-            require_https: true,
-            use_pbs_offloading: false,
-            verbose_rocket_logging: false,
-            log_file: Some(String::from("/var/log/webmmb_server.log")),
-            log_to_stdout: LogToStdOut(true),
-        }
+    static ref CONFIG: RwLock<Arc<Config>> = RwLock::new(
+        Arc::new(
+            Config{
+                mmb_exec_path: String::from("/usr/bin/MMB"),
+                mmb_parameters_path: String::from("/usr/share/include/MMB/parameters.csv"),
+                jobs_dir: String::from("/tmp/webmmb_server"),
+                examples_dir: String::from("/srv/www/webmmb_server/examples"),
+                root_dir: String::from("/srv/www/webmmb_server/"),
+                secret_key: oneshot_secret_key(),
+                domain: String::from("localhost"),
+                port: 443,
+                require_https: true,
+                use_pbs_offloading: false,
+                verbose_rocket_logging: false,
+                log_file: Some(String::from("/var/log/webmmb_server.log")),
+                log_to_stdout: LogToStdOut::default(),
+                log_level: LogLevel::default(),
+            }
+        )
     );
 }
 
@@ -92,8 +107,8 @@ fn read_config(path: &PathBuf) -> String {
     }
 }
 
-pub fn get() -> Config {
-    CONFIG.lock().unwrap().clone()
+pub fn get() -> Arc<Config> {
+    CONFIG.read().unwrap().clone()
 }
 
 pub fn load(cfg_path: PathBuf) {
@@ -119,5 +134,5 @@ pub fn load(cfg_path: PathBuf) {
         panic!();
     }
 
-    *CONFIG.lock().unwrap() = cfg;
+    *CONFIG.write().unwrap() = Arc::new(cfg);
 }
