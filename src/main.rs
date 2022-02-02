@@ -29,7 +29,6 @@ fn init() {
 #[rocket::launch]
 fn liftoff() -> _ {
     logging::log_startup_message();
-    config::load("./cfg.json");
     init();
 
     server::start()
