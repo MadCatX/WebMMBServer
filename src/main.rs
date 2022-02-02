@@ -2,6 +2,9 @@
 #[macro_use] extern crate rocket;
 extern crate uuid;
 
+use std::path::{Path, PathBuf};
+use clap::{Arg, ArgMatches, App};
+
 mod config;
 mod logging;
 mod mmb;
@@ -11,9 +14,21 @@ mod session;
 
 const LOGSRC: &'static str = "main";
 
-fn init() {
-    let p = std::path::Path::new(config::get().jobs_dir.as_str());
-    if !std::path::Path::is_dir(p) {
+fn arguments() -> ArgMatches<'static> {
+    App::new("WebMMB server")
+        .arg(Arg::with_name("config_file")
+            .long("config_file")
+            .value_name("CONFIG_FILE")
+            .help("Path to configuration file")
+            .takes_value(true))
+        .get_matches()
+}
+
+fn check_and_prepare() {
+    let cfg = config::get();
+
+    let p = Path::new(cfg.jobs_dir.as_str());
+    if !Path::is_dir(p) {
         let mut db = std::fs::DirBuilder::new();
         db.recursive(true);
         match db.create(p) {
@@ -26,15 +41,15 @@ fn init() {
     }
 }
 
+fn init_config(path: &str) {
+    config::load(PathBuf::from(path));
+}
+
 fn init_logging() {
     let cfg = config::get();
 
     let log_file_path = match &cfg.log_file {
-        Some(path) => {
-            let mut buf = std::path::PathBuf::new();
-            buf.push(path);
-            Some(buf)
-        },
+        Some(path) => Some(PathBuf::from(&path)),
         None => None,
     };
 
@@ -45,8 +60,12 @@ fn init_logging() {
 fn liftoff() -> _ {
     log_early!(Info, LOGSRC, "WebMMB server starting up");
 
+    let args = arguments();
+
+    init_config(args.value_of("config_file").unwrap_or("/etc/webmmb_server/config.json"));
     init_logging();
-    init();
+
+    check_and_prepare();
 
     server::start()
 }

@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 base64 = "^0.13.0"
+clap = "^2.34.0"
 file-lock = "^1.1.20"
 lazy_static = "^1.4.0"
 journald = "^0.7.0"
