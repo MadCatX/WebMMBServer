@@ -15,6 +15,15 @@ use crate::log_plain;
 const LOGSRC: &'static str = "config";
 
 #[derive(Clone, Deserialize)]
+pub struct LogToStdOut(bool);
+impl LogToStdOut {
+    pub fn get(&self) -> bool { self.0 }
+}
+impl Default for LogToStdOut {
+    fn default() -> Self { LogToStdOut(false) }
+}
+
+#[derive(Clone, Deserialize)]
 pub struct Config {
     pub mmb_exec_path: String,
     pub mmb_parameters_path: String,
@@ -32,6 +41,8 @@ pub struct Config {
     pub verbose_rocket_logging: bool,
 
     pub log_file: Option<String>,
+    #[serde(default)]
+    pub log_to_stdout: LogToStdOut,
 }
 lazy_static! {
     static ref CONFIG: Mutex<Config> = Mutex::new(
@@ -48,6 +59,7 @@ lazy_static! {
             use_pbs_offloading: false,
             verbose_rocket_logging: false,
             log_file: Some(String::from("/var/log/webmmb_server.log")),
+            log_to_stdout: LogToStdOut(true),
         }
     );
 }

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs;
+use std::fs::File;
 use std::io::Write;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -19,7 +19,8 @@ const PRIORITY: &'static str = "PRIORITY";
 const SOURCE: &'static str = "SOURCE";
 
 struct LoggerConfig {
-    pub log_file: Option<fs::File>,
+    pub log_file: Option<File>,
+    pub log_to_stdout: bool,
 }
 lazy_static! {
     static ref CONFIG: Mutex<Option<LoggerConfig>> = Mutex::new(None);
@@ -83,14 +84,10 @@ fn make_text_entry(pri: Priority, source: &str, message: &str) -> String {
     vec![priority_to_text(pri), time_str, source.to_string(), message.to_string()].join(DELIM)
 }
 
-fn write_to_file(mut entry: String) {
-    if let Some(cfg) = CONFIG.lock().unwrap().as_mut() {
-        if let Some(fh) = cfg.log_file.as_mut() {
-            entry.push('\n');
-            if let Err(e) = fh.write_all(entry.as_bytes()) {
-                write_to_journald(Priority::Debug, LOGSRC, &format!("Failed to write to logfile: {}", e.to_string()));
-            }
-        }
+fn write_to_file(mut entry: String, fh: &mut File) {
+    entry.push('\n');
+    if let Err(e) = fh.write_all(entry.as_bytes()) {
+        write_to_journald(Priority::Debug, LOGSRC, &format!("Failed to write to logfile: {}", e.to_string()));
     }
 }
 
@@ -103,7 +100,7 @@ fn write_to_stdout(entry: &str) {
     println!("{}", entry);
 }
 
-pub fn init(log_file_path: Option<PathBuf>) {
+pub fn init(log_file_path: Option<PathBuf>, log_to_stdout: bool) {
     let mut cfg = CONFIG.lock().unwrap();
     if cfg.is_some() {
         early(Priority::Critical, LOGSRC, "Attempted to initialize already initialized logger");
@@ -111,7 +108,7 @@ pub fn init(log_file_path: Option<PathBuf>) {
     }
 
     let log_file = match log_file_path {
-        Some(path) => match fs::File::create(&path) {
+        Some(path) => match File::create(&path) {
             Ok(fh) => {
                 early(Priority::Debug, LOGSRC, &format!("Opened log file {}", path.to_str().unwrap_or(INV_FILE_PATH)));
                 Some(fh)
@@ -124,7 +121,7 @@ pub fn init(log_file_path: Option<PathBuf>) {
         None => None,
     };
 
-    cfg.replace(LoggerConfig{ log_file });
+    cfg.replace(LoggerConfig{ log_file, log_to_stdout });
 }
 
 pub fn early(pri: Priority, source: &str, message: &str) {
@@ -139,7 +136,16 @@ pub fn incoming(pri: Priority, source: &str, remote_addr: Option<IpAddr>, messag
 
 pub fn plain(pri: Priority, source: &str, message: &str) {
     write_to_journald(pri, source, message);
-    write_to_file(make_text_entry(pri, source, message));
+
+    let text = make_text_entry(pri, source, message);
+    if let Some(cfg) = CONFIG.lock().unwrap().as_mut() {
+        if let Some(fh) = cfg.log_file.as_mut() {
+            write_to_file(text.clone(), fh);
+        }
+        if cfg.log_to_stdout {
+            write_to_stdout(&text);
+        }
+    }
 }
 
 #[macro_export]
