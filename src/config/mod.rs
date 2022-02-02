@@ -23,6 +23,8 @@ pub struct Config {
     pub require_https: bool,
     pub use_pbs_offloading: bool,
     pub verbose_rocket_logging: bool,
+
+    pub log_file: Option<String>,
 }
 lazy_static! {
     static ref CONFIG: Config = {

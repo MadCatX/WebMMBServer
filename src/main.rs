@@ -26,10 +26,26 @@ fn init() {
     }
 }
 
+fn init_logging() {
+    let cfg = config::get();
+
+    let log_file_path = match &cfg.log_file {
+        Some(path) => {
+            let mut buf = std::path::PathBuf::new();
+            buf.push(path);
+            Some(buf)
+        },
+        None => None,
+    };
+
+    logging::init(log_file_path);
+}
+
 #[rocket::launch]
 fn liftoff() -> _ {
     log_early!(Info, LOGSRC, "WebMMB server starting up");
 
+    init_logging();
     init();
 
     server::start()
