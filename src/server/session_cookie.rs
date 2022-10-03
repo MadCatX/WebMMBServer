@@ -1,17 +1,15 @@
-extern crate time;
-
 use rocket::http::{Cookie, CookieJar, SameSite};
 use uuid::Uuid;
 
 pub const AUTH_NAME: &'static str = "webmmb_auth";
 
 pub fn make_auth_cookie(domain: String, session_id: String, require_https: bool) -> Cookie<'static> {
-    let now = time::OffsetDateTime::now_utc();
-    let expire_on = now + time::Duration::days(1);
+    let now = rocket::time::OffsetDateTime::now_utc();
+    let expire_on = now + rocket::time::Duration::days(1);
 
     Cookie::build(AUTH_NAME, session_id)
         .domain(domain)
-        .expires(expire_on)
+        .expires(Some(expire_on))
         .path("/")
         .same_site(SameSite::Strict)
         .secure(require_https)
